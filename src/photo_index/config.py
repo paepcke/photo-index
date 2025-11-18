@@ -1,0 +1,23 @@
+"""Configuration for photo indexing system."""
+
+# Paths
+PHOTO_DIR = "/raid/photos"
+QDRANT_PATH = "./qdrant_storage"  # Local storage path
+COLLECTION_NAME = "photo_embeddings"
+
+# Qdrant settings
+QDRANT_HOST = "localhost"
+QDRANT_PORT = 6333
+EMBEDDING_DIM = 3584  # Llama 3.2-Vision 11B embedding dimension
+
+# Model settings
+MODEL_NAME = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+DEVICE = "cuda"  # Use GPU
+BATCH_SIZE = 8  # Adjust based on VRAM
+
+# File extensions to process
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.heic', '.HEIC', '.JPG', '.JPEG'}
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.MP4', '.MOV', '.AVI'}
+
+# Geocoding
+GEOCODING_USER_AGENT = "photo_indexer"
