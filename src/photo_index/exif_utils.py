@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-18 15:27:01
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-19 10:08:26
 """EXIF data extraction and GPS utilities."""
 
 from PIL import Image
@@ -6,20 +11,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import pillow_heif
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderServiceError
-import time
 
 # Register HEIF opener
 pillow_heif.register_heif_opener()
-
 
 class ExifExtractor:
     """Extract and process EXIF data from images."""
     
     def __init__(self, geocoding_user_agent: str = "photo_indexer"):
-        self.geocoder = Nominatim(user_agent=geocoding_user_agent, timeout=10)
-        self._geocode_cache = {}
+        pass
     
     def extract_exif(self, image_path: Path) -> Dict:
         """Extract EXIF data from an image file.
@@ -163,46 +163,6 @@ class ExifExtractor:
             decimal = -decimal
         
         return decimal
-    
-    def get_location_name(self, latitude: float, longitude: float) -> Optional[Dict]:
-        """Convert GPS coordinates to location name using reverse geocoding.
-        
-        Args:
-            latitude: Latitude in decimal degrees
-            longitude: Longitude in decimal degrees
-            
-        Returns:
-            Dictionary with location information or None
-        """
-        # Check cache
-        cache_key = f"{latitude:.4f},{longitude:.4f}"
-        if cache_key in self._geocode_cache:
-            return self._geocode_cache[cache_key]
-        
-        try:
-            location = self.geocoder.reverse(f"{latitude}, {longitude}", language='en')
-            
-            if location:
-                result = {
-                    'display_name': location.address,
-                    'city': location.raw.get('address', {}).get('city'),
-                    'state': location.raw.get('address', {}).get('state'),
-                    'country': location.raw.get('address', {}).get('country'),
-                    'country_code': location.raw.get('address', {}).get('country_code'),
-                }
-                
-                # Cache result
-                self._geocode_cache[cache_key] = result
-                
-                # Rate limiting for Nominatim (1 request per second)
-                time.sleep(1.1)
-                
-                return result
-            
-        except (GeocoderTimedOut, GeocoderServiceError) as e:
-            print(f"Geocoding error for {latitude}, {longitude}: {e}")
-        
-        return None
     
     def _parse_datetime(self, datetime_str: Optional[str]) -> Optional[str]:
         """Parse EXIF datetime string to ISO format.

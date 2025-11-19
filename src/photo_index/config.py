@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-18 15:27:01
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-18 15:38:34
 """Configuration for photo indexing system."""
 
 # Paths

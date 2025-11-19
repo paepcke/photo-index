@@ -1,21 +1,35 @@
-"""Main photo indexing system."""
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-18 15:27:01
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-19 10:14:40
+
+"""
+Main photo indexing system. Instead of CLI args, uses
+config.py file in same directory as this file.
+
+Usage (after adjusting config.py):
+
+    src/photo_indexer/photo_indexer.py
+
+"""
 
 from pathlib import Path
 from typing import List, Dict, Optional
-import json
 from datetime import datetime
 from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
-from config import (
+from photo_index.config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
     EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 )
-from exif_utils import ExifExtractor
-from embedding_generator import EmbeddingGenerator
-from mac_metadata import MacMetadataExtractor
-
+from photo_index.exif_utils import ExifExtractor
+from photo_index.embedding_generator import EmbeddingGenerator
+from photo_index.geocoding import Geocoder
+from photo_index.mac_metadata import MacMetadataExtractor
 
 class PhotoIndexer:
     """Main photo indexing class that coordinates all indexing operations."""
@@ -56,7 +70,17 @@ class PhotoIndexer:
         self.exif_extractor = ExifExtractor()
         
         # Mac metadata extractor
-        self.mac_metadata_extractor = MacMetadataExtractor()
+        self.mac_metadata_extractor = MacMetadataExtractor() 
+
+        # Geocoder (only if enabled)
+        self.geocoder = None
+        if self.enable_geocoding:
+            try:
+                self.geocoder = Geocoder()
+            except Exception as e:
+                print(f"Warning: Could not initialize geocoder: {e}")
+                print("Continuing without geocoding functionality")
+                self.enable_geocoding = False        
         
         # Embedding generator
         self.embedding_generator = EmbeddingGenerator(model_name, device)
@@ -128,14 +152,14 @@ class PhotoIndexer:
             
             # Get location from GPS if available
             location = None
-            if self.enable_geocoding and exif_data['gps']:
+            if self.enable_geocoding and self.geocoder and exif_data['gps']:
                 gps = exif_data['gps']
                 if 'latitude' in gps and 'longitude' in gps:
-                    location = self.exif_extractor.get_location_name(
+                    location = self.geocoder.get_location(
                         gps['latitude'],
                         gps['longitude']
-                    )
-            
+                    )                    
+                                
             # Build payload
             payload = {
                 'file_path': str(photo_path),
