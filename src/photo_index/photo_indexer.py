@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-19 10:14:40
+# @Last Modified time: 2025-11-19 16:47:59
 
 """
 Main photo indexing system. Instead of CLI args, uses
@@ -15,6 +15,9 @@ Usage (after adjusting config.py):
 
 """
 
+
+
+import os
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -24,7 +27,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from photo_index.config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
-    EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
+    MODEL_PATH
 )
 from photo_index.exif_utils import ExifExtractor
 from photo_index.embedding_generator import EmbeddingGenerator
@@ -83,7 +87,7 @@ class PhotoIndexer:
                 self.enable_geocoding = False        
         
         # Embedding generator
-        self.embedding_generator = EmbeddingGenerator(model_name, device)
+        self.embedding_generator = EmbeddingGenerator(MODEL_PATH, device)
         
         # Get actual embedding dimension from model
         self.embedding_dim = self.embedding_generator.get_embedding_dim()

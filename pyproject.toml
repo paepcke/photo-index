@@ -48,6 +48,7 @@ dependencies = [
     "requests>=2.31.0",
     "xattr>=0.10.0",
     "tqdm>=4.66.0",
+    "accelerate>=1.11.0",
 ]
 
 # Optional groups of dependencies (e.g., for development or testing)

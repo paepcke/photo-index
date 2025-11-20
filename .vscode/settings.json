@@ -2,6 +2,10 @@
     "terminal.integrated.env": {
         "ANACONDA_ENV_DIR": "/home/paepcke/anaconda3/photo-index",
     },
+    "python.envFile": "${workspaceFolder}/.env",
+    "terminal.integrated.env.linux": {
+        "HF_HOME": "/data/huggingface"
+    },    
     "workbench.colorTheme": "Default Dark Modern",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/src"

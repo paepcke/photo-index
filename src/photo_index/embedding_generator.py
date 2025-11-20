@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-18 15:27:01
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-19 18:25:24
 """Image embedding generation using Llama 3.2-Vision model."""
 
 import torch
@@ -15,7 +20,7 @@ pillow_heif.register_heif_opener()
 class EmbeddingGenerator:
     """Generate image embeddings using Llama 3.2-Vision model."""
     
-    def __init__(self, model_name: str, device: str = "cuda"):
+    def __init__(self, model_path: str, device: str = "cuda"):
         """Initialize the embedding generator.
         
         Args:
@@ -23,18 +28,22 @@ class EmbeddingGenerator:
             device: Device to run on ("cuda" or "cpu")
         """
         self.device = device
-        self.model_name = model_name
+        self.model_path = model_path
         
-        print(f"Loading model {model_name} on {device}...")
+        print(f"Loading model {model_path} on {device}...")
         
         # Load model and processor
         self.model = MllamaForConditionalGeneration.from_pretrained(
-            model_name,
+            model_path,
             torch_dtype=torch.bfloat16,
             device_map=device,
+            local_files_only=True
         )
         
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, 
+            local_files_only=True
+            )
         self.model.eval()
         
         print("Model loaded successfully")
@@ -52,22 +61,28 @@ class EmbeddingGenerator:
             # Load and preprocess image
             image = Image.open(image_path).convert('RGB')
             
-            # Process image
+            # Create a minimal text prompt (required for the model)
+            text = "Describe this image."
+            
+            # Process image and text together
             inputs = self.processor(
+                text=text,
                 images=image,
                 return_tensors="pt"
-            ).to(self.device)
+            )
             
-            # Generate embedding using vision encoder
+            # Move all inputs to device
+            inputs = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v 
+                    for k, v in inputs.items()}
+            
+            # Generate embedding
             with torch.no_grad():
-                # Get vision encoder outputs
-                vision_outputs = self.model.vision_model(
-                    pixel_values=inputs['pixel_values']
-                )
+                # Get model outputs - this handles all the vision processing
+                outputs = self.model(**inputs, output_hidden_states=True)
                 
-                # Use the pooled output (CLS token equivalent)
-                # For Llama Vision, we'll use mean pooling of the last hidden state
-                hidden_states = vision_outputs.last_hidden_state
+                # Extract vision embeddings from hidden states
+                # Use the last hidden state and pool it
+                hidden_states = outputs.hidden_states[-1]
                 embedding = hidden_states.mean(dim=1).squeeze()
                 
                 # Convert to numpy
@@ -78,7 +93,7 @@ class EmbeddingGenerator:
         except Exception as e:
             print(f"Error generating embedding for {image_path}: {e}")
             raise
-    
+        
     def generate_embeddings_batch(self, image_paths: List[Path]) -> List[np.ndarray]:
         """Generate embeddings for a batch of images.
         
