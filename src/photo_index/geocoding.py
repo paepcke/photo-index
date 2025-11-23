@@ -2,9 +2,35 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-19 10:04:41
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-19 10:06:05
+# @Last Modified time: 2025-11-22 13:18:15
 
-"""Geocoding using Google Maps API to convert GPS coordinates to location names."""
+"""
+Geocoding using Google Maps API to convert GPS coordinates to location names.
+
+Example:
+
+    gcoder = Geocoder()
+    khe_pyramid = (49.00922, 8.40394)
+    addr = gcoder.get_location(*khe_pyramid)
+    addr:
+        {'formatted_address': 'Baden-Württemberg, Marktpl. 1, 76131 Karlsruhe, Germany', 
+        'city': 'Karlsruhe', 
+        'county': 'Karlsruhe', 
+        'state': 'Baden-Württemberg', 
+        'country': 'Germany', 
+        'country_code': 'DE', 
+        'postal_code': '76131', 
+        'place_id': 'ChIJR-ltTgkHl0cROYxu0um92uY', 
+        'raw_components': {'city': 'Karlsruhe', 
+                            'county': 'Karlsruhe', 
+                            'state': 'Baden-Württemberg', 
+                            'country': 'Germany', 
+                            'country_code': 'DE', 
+                            'postal_code': '76131'
+                            }
+        }
+
+"""
 
 import requests
 from pathlib import Path

@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-19 10:08:26
+# @Last Modified time: 2025-11-22 17:52:50
 """EXIF data extraction and GPS utilities."""
 
 from PIL import Image
@@ -102,17 +102,22 @@ class ExifExtractor:
         
         for tag_id, value in gps_data.items():
             tag_name = GPSTAGS.get(tag_id, tag_id)
-            gps_parsed[tag_name] = value
+            gps_parsed[tag_name] = self._serialize_value(value)  # Add serialization here!
         
         # Convert to decimal degrees
         lat, lon = self._get_decimal_coordinates(gps_parsed)
         
         if lat is not None and lon is not None:
+            # Serialize altitude too
+            altitude = gps_parsed.get('GPSAltitude')
+            if altitude is not None:
+                altitude = self._serialize_value(altitude)
+            
             return {
                 'latitude': lat,
                 'longitude': lon,
-                'altitude': gps_parsed.get('GPSAltitude'),
-                'raw': gps_parsed
+                'altitude': altitude,
+                'raw': gps_parsed  # Now properly serialized
             }
         
         return {}
@@ -185,7 +190,12 @@ class ExifExtractor:
     
     def _serialize_value(self, value):
         """Convert EXIF values to JSON-serializable format."""
-        if isinstance(value, bytes):
+        from PIL.TiffImagePlugin import IFDRational
+        
+        if isinstance(value, IFDRational):
+            # Convert IFDRational to float
+            return float(value)
+        elif isinstance(value, bytes):
             try:
                 return value.decode('utf-8')
             except UnicodeDecodeError:
@@ -196,3 +206,4 @@ class ExifExtractor:
             return {k: self._serialize_value(v) for k, v in value.items()}
         else:
             return value
+    

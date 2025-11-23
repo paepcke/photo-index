@@ -9,7 +9,7 @@
             "justMyCode":true,
             "console": "integratedTerminal",
             "env": {
-                "PYTHONPATH": "/Users/paepcke/VSCodeWorkspaces/photo-index/src/:${env:PYTHONPATH}"
+                "PYTHONPATH": "${env:HOME}/VSCodeWorkspaces/photo-index/src/:${env:PYTHONPATH}"
             },
         },
         {

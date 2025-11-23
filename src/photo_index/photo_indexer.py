@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-19 16:47:59
+# @Last Modified time: 2025-11-22 18:19:41
 
 """
 Main photo indexing system. Instead of CLI args, uses
@@ -12,7 +12,6 @@ config.py file in same directory as this file.
 Usage (after adjusting config.py):
 
     src/photo_indexer/photo_indexer.py
-
 """
 
 
@@ -27,8 +26,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from photo_index.config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
-    EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
-    MODEL_PATH
+    EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, EMBEDDING_DIM, 
+    IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, MODEL_PATH
 )
 from photo_index.exif_utils import ExifExtractor
 from photo_index.embedding_generator import EmbeddingGenerator
@@ -90,7 +89,7 @@ class PhotoIndexer:
         self.embedding_generator = EmbeddingGenerator(MODEL_PATH, device)
         
         # Get actual embedding dimension from model
-        self.embedding_dim = self.embedding_generator.get_embedding_dim()
+        self.embedding_dim = EMBEDDING_DIM if EMBEDDING_DIM else self.embedding_generator.get_embedding_dim()
         
         # Initialize collection
         self._init_collection()
@@ -99,15 +98,35 @@ class PhotoIndexer:
     
     def _init_collection(self):
         """Initialize or recreate the Qdrant collection."""
-        # Check if collection exists
         collections = self.qdrant_client.get_collections().collections
         collection_exists = any(c.name == self.collection_name for c in collections)
         
         if collection_exists:
-            print(f"Collection '{self.collection_name}' already exists")
-            # Optionally recreate or continue
-        else:
-            print(f"Creating collection '{self.collection_name}'...")
+            collection_info = self.qdrant_client.get_collection(self.collection_name)
+            existing_dim = collection_info.config.params.vectors.size
+            
+            if existing_dim != self.embedding_dim:
+                points_count = collection_info.points_count
+                
+                # Warn if deleting data
+                if points_count > 0:
+                    print(f"WARNING: Collection has {points_count} indexed photos!")
+                    print(f"Dimension mismatch: existing={existing_dim}, need={self.embedding_dim}")
+                    response = input("Delete and recreate? (yes/no): ")
+                    if response.lower() != 'yes':
+                        raise RuntimeError("Collection dimension mismatch. Aborting.")
+                else:
+                    print(f"Dimension mismatch: existing={existing_dim}, need={self.embedding_dim}")
+                
+                # Delete regardless of points_count
+                print(f"Deleting and recreating collection...")
+                self.qdrant_client.delete_collection(self.collection_name)
+                collection_exists = False
+            else:
+                print(f"Collection '{self.collection_name}' exists with correct dimension")
+        
+        if not collection_exists:
+            print(f"Creating collection with dimension {self.embedding_dim}...")
             self.qdrant_client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
