@@ -2,13 +2,28 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-22 18:17:11
+# @Last Modified time: 2025-11-23 13:25:37
 """Configuration for photo indexing system."""
 
+# Actions
+GEN_IMG_DESCRIPTIONS = 1
+
+# Prompts
+IMG_DESC_PROMPT = (
+                    "Analyze this image and extract metadata for a search index. "
+                    "Return the result strictly as a JSON object with no conversational "
+                    "text or markdown wrapping.\n"
+                    "Use the following schema: "
+                    "{ 'objects': ['list', 'of', 'items'],"
+                    "  'materials': ['list', 'of', 'materials'], "
+                    "  'setting': ['location', 'context'], "
+                    "  'visual_attributes': ['colors', 'lighting', 'style'] }"
+                  )
+
 # Paths
-#******PHOTO_DIR = "/raid/photos"
-PHOTO_DIR = "/raid/photo_tmp"
-QDRANT_PATH = "./qdrant_storage"  # Local storage path
+PHOTO_DIR = "/raid/photos"
+#******PHOTO_DIR = "/raid/photo_tmp"
+QDRANT_PATH = "/raid/qdrant_storage/photos"  # Local storage path
 COLLECTION_NAME = "photo_embeddings"
 
 # Qdrant settings

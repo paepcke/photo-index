@@ -2,19 +2,24 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-22 18:20:32
+# @Last Modified time: 2025-11-23 10:25:02
 """Image embedding generation using Llama 3.2-Vision model."""
 
 import torch
-from transformers import MllamaForConditionalGeneration, AutoProcessor
+from transformers import MllamaForConditionalGeneration, AutoProcessor, GenerationConfig
 from PIL import Image
 import pillow_heif
 from pathlib import Path
 from typing import List
 import numpy as np
 
+from logging_service import LoggingService
+
+from photo_index.config import IMG_DESC_PROMPT
+
 # Register HEIF opener
 pillow_heif.register_heif_opener()
+
 
 
 class EmbeddingGenerator:
@@ -29,8 +34,10 @@ class EmbeddingGenerator:
         """
         self.device = device
         self.model_path = model_path
+
+        self.log = LoggingService()
         
-        print(f"Loading model {model_path} on {device}...")
+        self.log.info(f"Loading model {model_path} on {device}...")
         
         # Load model and processor
         self.model = MllamaForConditionalGeneration.from_pretrained(
@@ -46,7 +53,7 @@ class EmbeddingGenerator:
             )
         self.model.eval()
         
-        print("Model loaded successfully")
+        self.log.info("Model loaded successfully")
     
 
     def generate_embedding(self, image_path: Path) -> np.ndarray:
@@ -95,13 +102,88 @@ class EmbeddingGenerator:
             return embedding_np
             
         except Exception as e:
-            print(f"Error generating embedding for {image_path}: {e}")
+            self.log.err(f"Error generating embedding for {image_path}: {e}")
             raise
 
             
         except Exception as e:
-            print(f"Error generating embedding for {image_path}: {e}")
+            self.log.err(f"Error generating embedding for {image_path}: {e}")
             raise        
+
+    def generate_description(self, image_path: Path, prompt: str = None) -> str:
+        """Generate a text description of the image contents.
+        
+        Args:
+            image_path: Path to the image file
+            prompt: Optional custom prompt. If None, uses default object detection prompt.
+            
+        Returns:
+            Text description of the image
+        """
+        try:
+            # Load image
+            image = Image.open(image_path).convert('RGB')
+            
+            # Default prompt optimized for object detection and description
+            if prompt is None:
+                prompt = IMG_DESC_PROMPT
+            
+            # Format as a chat message (Llama format)
+            messages = [
+                {
+                    "role": "user", 
+                    "content": [
+                        {"type": "image"},
+                        {"type": "text", "text": prompt}
+                    ]
+                }
+            ]
+            
+            # Apply chat template
+            input_text = self.processor.apply_chat_template(
+                messages, 
+                add_generation_prompt=True
+            )
+            
+            # Process with the properly formatted text
+            inputs = self.processor(
+                image,
+                input_text,
+                return_tensors="pt",
+                add_special_tokens=False
+            )
+            
+            # Move to device
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            # Generate description
+            gen_config = GenerationConfig(
+                max_new_tokens=200,
+                do_sample=False,
+                temperature=None,
+                top_p=None,
+                pad_token_id=self.processor.tokenizer.pad_token_id,
+                eos_token_id=self.processor.tokenizer.eos_token_id
+            )            
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    **inputs,
+                    generation_config=gen_config
+                )
+            
+            # Decode - get only the new tokens
+            generated_text = self.processor.decode(
+                output_ids[0][inputs['input_ids'].shape[1]:],
+                skip_special_tokens=True
+            )
+            
+            return generated_text.strip()
+            
+        except Exception as e:
+            self.log.err(f"Error generating description for {image_path}: {e}")
+            import traceback
+            self.log.err(traceback.format_exc())
+            return ""
 
     def generate_embeddings_batch(self, image_paths: List[Path]) -> List[np.ndarray]:
         """Generate embeddings for a batch of images.
@@ -119,7 +201,7 @@ class EmbeddingGenerator:
                 embedding = self.generate_embedding(image_path)
                 embeddings.append(embedding)
             except Exception as e:
-                print(f"Skipping {image_path} due to error: {e}")
+                self.log.err(f"Skipping {image_path} due to error: {e}")
                 # Return zero vector on error
                 embeddings.append(None)
         
@@ -148,6 +230,6 @@ class EmbeddingGenerator:
             
             return embedding.shape[0]
         except Exception as e:
-            print(f"Warning: Could not auto-detect embedding dimension: {e}")
-            print("Using default value of 7680")
+            self.log.warn(f"Warning: Could not auto-detect embedding dimension: {e}")
+            self.log.info("Using default value of 7680")
             return 7680
