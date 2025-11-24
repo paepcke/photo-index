@@ -2,24 +2,49 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-23 08:29:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-23 12:01:20
+# @Last Modified time: 2025-11-24 09:18:08
 
 import time
-import datetime
+from datetime import datetime, timedelta
+
 from contextlib import contextmanager
 import hashlib
+from typing import Callable
 
 # --------------------- Context Managers ----------------
 
-import time
-import datetime
-from contextlib import contextmanager
-from typing import Callable
-
 class BatchTimer:
-    """Helper class yielded by the context manager to track loop progress."""
+    '''
+    Helper class yielded by the context manager to track loop progress.
+    Example of a client:
+        timed('Process photos') as batchTimer:
+            for i in num_photos:
+                process_one_photo()
+                batchTimer(progress(i, every=50, total=num_photos))
+
+        The call to progress() prints a progress message every 50
+        times through the loop.
+    '''
 
     def __init__(self, label: str, start_time: float, log_func: Callable[[str], None]):
+        '''
+        Instance provides progress information for long-running client
+        processes that provide intermittent progress information. When
+        a client uses the 'timed' context manager, an instance of this
+        class is returned to them. When they wish to report progress,
+        they call the progress() method on this instance.
+
+        Progress is in terms of code loops in the client, converted to
+        time for status reports.
+
+        :param label: short text describing the client's overall operation
+        :type label: str
+        :param start_time: start of the client's long running operation
+        :type start_time: float
+        :param log_func: function to call for printing progress. Could be
+            a logger.info() method, or the built-in print() fucntion.
+        :type log_func: Callable[[str], None]
+        '''
         self.label = label
         self.start_time = start_time
         self.batch_start_time = start_time
@@ -27,11 +52,13 @@ class BatchTimer:
 
     def progress(self, i: int, every: int = 50, total: int = None):
         """
-        Checks if a batch report is needed.
+        Checks if a batch report is needed, and logs it by calling 
+        the log function if appropriate.
         
-        :param i: Current loop index (0-based)
-        :param every: Report interval
-        :param total: Total number of items (required for ETA calculation)
+        :param i: Current loop index (0-based) of the client process.
+        :param every: Report interval in counts through the client's operations loop
+        :param total: Total number of items (required for ETA calculation). This
+            is usually the total number of client loops required.
         """
         count = i + 1
         if count % every == 0:
@@ -45,14 +72,15 @@ class BatchTimer:
             avg_per_item = total_elapsed / count
             
             # Construct message parts
-            msg_parts = [f"  > {self.label} processed {count}"]
-            msg_parts.append(f"last {every} in {datetime.timedelta(seconds=int(batch_duration))}")
+            #msg_parts = [f"  > {self.label} processed {count}"]
+            msg_parts = [f"  > did {count}. "]
+            msg_parts.append(f"batch of {every} in {timedelta(seconds=int(batch_duration))}")
 
             # Calculate ETA if total is provided
             if total:
                 remaining_items = total - count
                 eta_seconds = int(remaining_items * avg_per_item)
-                eta_str = str(datetime.timedelta(seconds=eta_seconds))
+                eta_str = Utils.calendar_eta(eta_seconds)
                 msg_parts.append(f"ETA: {eta_str}")
 
             # Log and reset batch timer
@@ -110,7 +138,7 @@ def timed(label, log=None):
         # Announce ending
         end = time.perf_counter()
         seconds = end - start
-        elapsed_time = datetime.timedelta(seconds=int(seconds))
+        elapsed_time = timedelta(seconds=int(seconds))
         log_func(f"Finished {label}: {elapsed_time} elapsed time")
 
 # ---------------------- Class Utils -------------------
@@ -150,3 +178,46 @@ class Utils:
             Positive integer for Qdrant point ID
         """
         return int(guid, 16) % (2**63)
+
+    # ---------------------- Miscellaneous -------------------------
+
+    @staticmethod
+    def calendar_eta(eta_seconds: int) -> str:
+        '''
+        Given a number of seconds into the future, return a 
+        string that gives the actual local time of ETA.
+        If on the same day, output is hh:mm:ss. If a day
+        or more in the future, output in ISO format.
+
+        Example 1: Short duration (same day)
+        Assuming it is currently 10:00:00
+            print(format_future_eta(3600))  
+        
+        Output: 11:00:00
+
+        Example 2: Long duration (rolls over to tomorrow)
+            print(format_future_eta(86400 + 3600)) 
+
+        Output: 2023-10-27T11:00:00
+
+        :param eta_seconds: numnber of seconds into the future
+        :type eta_seconds: int
+        :return: walltime
+        :rtype: str
+        '''
+        # Get current local time
+        now = datetime.now()
+        
+        # Calculate future time
+        future_time = now + timedelta(seconds=eta_seconds)
+        
+        # Check if the date has changed
+        if future_time.date() == now.date():
+            # Same day: Return HH:MM:SS
+            return future_time.strftime("%H:%M:%S")
+        else:
+            # Rollover (next day or later): Return ISO format
+            # sep=' ' puts a space instead of 'T'
+            # timespec='seconds' removes microseconds for cleaner output
+            return future_time.isoformat(timespec='seconds')
+

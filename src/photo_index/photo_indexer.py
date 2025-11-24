@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-23 13:26:44
+# @Last Modified time: 2025-11-24 09:56:47
 
 """
 Main photo indexing system. Instead of CLI args, uses
@@ -182,12 +182,27 @@ class PhotoIndexer:
                 #with timed(f'Description {photo_path.name}', self.log):
                 #    description = self.embedding_generator.generate_description(photo_path)  # FIX: Added photo_path
                 description = self.embedding_generator.generate_description(photo_path)  # FIX: Added photo_path
-                # Parse JSON for structured searching
-                try:
-                    description_parsed = json.loads(description)
-                except json.JSONDecodeError:
-                    self.log.warn(f"Could not parse description JSON for {photo_path.name}")
-                    description_parsed = None                
+                if description:
+                    try:
+                        description_parsed = json.loads(description)
+                    except json.JSONDecodeError as e:
+                        # Log the bad JSON
+                        self.log.warn(f"JSON parse failed for {photo_path.name}")
+                        self.log.warn(f"  Error at position {e.pos}: {e.msg}")
+                        self.log.warn(f"  Raw description length: {len(description)} chars")
+                        
+                        # Write to file for inspection
+                        bad_json_file = Path(f"/tmp/bad_json_{photo_path.stem}.txt")
+                        bad_json_file.write_text(f"Photo: {photo_path}\n\nError: {e}\n\nJSON:\n{description}")
+                        self.log.warn(f"  Saved to: {bad_json_file}")
+                        
+                        # Try to fix common issues
+                        description_parsed = self._try_fix_json(description)
+                        if description_parsed:
+                            self.log.info(f"  ✓ Auto-fixed JSON for {photo_path.name}")
+                        else:
+                            self.log.warn(f"  ✗ Could not auto-fix JSON")
+                            # Still continue - store raw description
             
             # Extract EXIF
             #with timed(f'EXIF {photo_path.name}', self.log):
@@ -365,7 +380,51 @@ class PhotoIndexer:
             print(f"  Vector dimension: {self.embedding_dim}")
         except Exception as e:
             print(f"Error getting stats: {e}")
-    
+
+
+    def _try_fix_json(self, json_str: str) -> Optional[dict]:
+        """Attempt to fix common JSON formatting issues."""
+        import re
+        
+        # First, try to fix truncated JSON
+        if not json_str.strip().endswith('}'):
+            # Truncated - try to close arrays and object
+            fixed = json_str.rstrip()
+            # Close any unclosed strings
+            if fixed.count('"') % 2 == 1:
+                fixed += '"'
+            # Close arrays
+            open_brackets = fixed.count('[') - fixed.count(']')
+            fixed += ']' * open_brackets
+            # Close object
+            if not fixed.endswith('}'):
+                fixed += ' }'
+            
+            try:
+                return json.loads(fixed)
+            except:
+                pass
+        
+        # Then try other fixes...
+        fixes = [
+            ('markdown', lambda s: re.sub(r'```json\s*|\s*```', '', s)),
+            ('whitespace', lambda s: s.strip()),
+            ('trailing_brace', lambda s: re.sub(r',\s*}', '}', s)),
+            ('trailing_bracket', lambda s: re.sub(r',\s*]', ']', s)),
+        ]
+        
+        current = json_str
+        for name, fix_func in fixes:
+            try:
+                current = fix_func(current)
+                result = json.loads(current)
+                return result
+            except:
+                continue
+        
+        return None
+
+
     def reindex_photo(self, photo_path: Path):
         """Reindex a specific photo (update existing entry)."""
         result = self.index_photo(photo_path)
@@ -407,6 +466,7 @@ def main():
     with timed('Index all', LoggingService()):
         #******indexer.index_all(force_reindex=False)
         indexer.index_all(force_reindex=True, time_report_every=50)
+        #******indexer.index_all(force_reindex=False, time_report_every=50)
 
 
 if __name__ == "__main__":
