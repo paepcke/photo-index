@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}Photo Search - Home{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-search"></i> Search Your Photos
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <!-- Search Form -->
+        <div class="search-section">
+            <form id="searchForm" enctype="multipart/form-data">
+                <!-- Search Type Tabs -->
+                <ul class="nav nav-tabs mb-3" id="searchTypeTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="text-tab" data-bs-toggle="tab" data-bs-target="#text-search" type="button">
+                            <i class="bi bi-fonts"></i> Text Search
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="image-tab" data-bs-toggle="tab" data-bs-target="#image-search" type="button">
+                            <i class="bi bi-image"></i> Similar Images
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="hybrid-tab" data-bs-toggle="tab" data-bs-target="#hybrid-search" type="button">
+                            <i class="bi bi-plus-circle"></i> Hybrid Search
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content" id="searchTypeContent">
+                    <!-- Text Search -->
+                    <div class="tab-pane fade show active" id="text-search">
+                        <input type="hidden" name="search_type" value="text">
+                        <div class="mb-3">
+                            <label for="textQuery" class="form-label">Search for:</label>
+                            <input type="text" class="form-control form-control-lg" id="textQuery" name="text_query" 
+                                   placeholder="e.g., dog, sunset, beach...">
+                            <div class="form-text">Search in photo descriptions (objects, materials, setting, visual attributes)</div>
+                        </div>
+                    </div>
+
+                    <!-- Image Search -->
+                    <div class="tab-pane fade" id="image-search">
+                        <input type="hidden" name="search_type" value="image">
+                        <div class="mb-3">
+                            <label for="queryImage" class="form-label">Upload a query image:</label>
+                            <input type="file" class="form-control" id="queryImage" name="query_image" accept="image/*">
+                            <div class="form-text">Find photos visually similar to this image</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="scoreThreshold" class="form-label">Minimum Similarity (optional):</label>
+                            <input type="number" class="form-control" id="scoreThreshold" name="score_threshold" 
+                                   min="0" max="1" step="0.1" placeholder="0.0 - 1.0">
+                        </div>
+                    </div>
+
+                    <!-- Hybrid Search -->
+                    <div class="tab-pane fade" id="hybrid-search">
+                        <input type="hidden" name="search_type" value="hybrid">
+                        <div class="mb-3">
+                            <label for="hybridImage" class="form-label">Query Image (optional):</label>
+                            <input type="file" class="form-control" id="hybridImage" name="query_image" accept="image/*">
+                        </div>
+                        <div class="mb-3">
+                            <label for="hybridText" class="form-label">Text Query (optional):</label>
+                            <input type="text" class="form-control" id="hybridText" name="text_query" 
+                                   placeholder="e.g., outdoor, sunset...">
+                        </div>
+                        <div class="mb-3">
+                            <label for="hybridThreshold" class="form-label">Minimum Similarity (optional):</label>
+                            <input type="number" class="form-control" id="hybridThreshold" name="score_threshold" 
+                                   min="0" max="1" step="0.1" placeholder="0.0 - 1.0">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters (collapsible) -->
+                <div class="mb-3">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#filtersCollapse">
+                        <i class="bi bi-funnel"></i> Advanced Filters
+                    </button>
+                </div>
+
+                <div class="collapse" id="filtersCollapse">
+                    <div class="filter-section">
+                        <div class="row">
+                            <!-- Location Filters -->
+                            <div class="col-md-4 mb-3">
+                                <h6><i class="bi bi-geo-alt"></i> Location</h6>
+                                <input type="text" class="form-control mb-2" name="location_city" placeholder="City">
+                                <input type="text" class="form-control mb-2" name="location_state" placeholder="State">
+                                <input type="text" class="form-control" name="location_country" placeholder="Country">
+                            </div>
+
+                            <!-- Date Filters -->
+                            <div class="col-md-4 mb-3">
+                                <h6><i class="bi bi-calendar"></i> Date Range</h6>
+                                <input type="date" class="form-control mb-2" name="date_from" placeholder="From">
+                                <input type="date" class="form-control" name="date_to" placeholder="To">
+                            </div>
+
+                            <!-- Camera Filters -->
+                            <div class="col-md-4 mb-3">
+                                <h6><i class="bi bi-camera"></i> Camera</h6>
+                                <input type="text" class="form-control mb-2" name="camera_make" placeholder="Make (e.g., Canon)">
+                                <input type="text" class="form-control" name="camera_model" placeholder="Model (e.g., EOS R5)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Limit -->
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label for="limit" class="form-label">Results:</label>
+                        <select class="form-select" id="limit" name="limit">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Submit -->
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="bi bi-search"></i> Search
+                </button>
+            </form>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 id="resultsTitle">Results</h2>
+                <button class="btn btn-secondary" onclick="clearResults()">
+                    <i class="bi bi-x-circle"></i> Clear
+                </button>
+            </div>
+            
+            <div class="photo-grid" id="resultsGrid"></div>
+        </div>
+
+        <!-- No Results -->
+        <div id="noResults" style="display: none;">
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> No photos found matching your search criteria.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const searchForm = document.getElementById('searchForm');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const resultsSection = document.getElementById('resultsSection');
+    const resultsGrid = document.getElementById('resultsGrid');
+    const resultsTitle = document.getElementById('resultsTitle');
+    const noResults = document.getElementById('noResults');
+
+    searchForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        // Show loading
+        loadingOverlay.classList.add('active');
+        resultsSection.style.display = 'none';
+        noResults.style.display = 'none';
+        
+        try {
+            const formData = new FormData(searchForm);
+            
+            const response = await fetch('/search', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Search failed');
+            }
+            
+            const data = await response.json();
+            displayResults(data.results);
+            
+        } catch (error) {
+            alert('Error: ' + error.message);
+        } finally {
+            loadingOverlay.classList.remove('active');
+        }
+    });
+
+    function displayResults(results) {
+        if (results.length === 0) {
+            noResults.style.display = 'block';
+            return;
+        }
+        
+        resultsTitle.textContent = `${results.length} Result${results.length !== 1 ? 's' : ''}`;
+        resultsGrid.innerHTML = '';
+        
+        results.forEach(photo => {
+            const card = createPhotoCard(photo);
+            resultsGrid.appendChild(card);
+        });
+        
+        resultsSection.style.display = 'block';
+        resultsSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function createPhotoCard(photo) {
+        const card = document.createElement('div');
+        card.className = 'photo-card';
+        card.onclick = () => window.location.href = `/photo/${photo.guid}`;
+        
+        let description = '';
+        if (photo.description && photo.description.objects) {
+            description = photo.description.objects.slice(0, 3).join(', ');
+        }
+        
+        let location = '';
+        if (photo.location && photo.location.city) {
+            location = `${photo.location.city}, ${photo.location.state || photo.location.country || ''}`;
+        }
+        
+        card.innerHTML = `
+            <div style="position: relative;">
+                <img src="${photo.thumbnail_url}" alt="${photo.file_name}" loading="lazy">
+                ${photo.score ? `<span class="score-badge">${(photo.score * 100).toFixed(0)}%</span>` : ''}
+            </div>
+            <div class="photo-card-body">
+                <div class="photo-card-title">${photo.file_name}</div>
+                ${photo.date_taken ? `<div class="photo-card-meta"><i class="bi bi-calendar"></i> ${formatDate(photo.date_taken)}</div>` : ''}
+                ${location ? `<div class="photo-card-meta"><i class="bi bi-geo-alt"></i> ${location}</div>` : ''}
+                ${description ? `<div class="photo-card-meta"><i class="bi bi-tag"></i> ${description}</div>` : ''}
+            </div>
+        `;
+        
+        return card;
+    }
+
+    function formatDate(isoDate) {
+        try {
+            const date = new Date(isoDate);
+            return date.toLocaleDateString();
+        } catch {
+            return isoDate.split('T')[0];
+        }
+    }
+
+    function clearResults() {
+        resultsSection.style.display = 'none';
+        noResults.style.display = 'none';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+</script>
+{% endblock %}

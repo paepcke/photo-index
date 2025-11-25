@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}{{ photo.file_name }} - Photo Detail{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12 mb-3">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Search
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Photo Display -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <img src="{{ url_for('serve_photo', guid=photo.guid) }}" 
+                 class="card-img-top" 
+                 alt="{{ photo.file_name }}"
+                 style="max-height: 70vh; object-fit: contain; background: #000;">
+            <div class="card-body">
+                <h5 class="card-title">{{ photo.file_name }}</h5>
+                <p class="text-muted">{{ photo.file_path }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metadata Sidebar -->
+    <div class="col-lg-4">
+        <!-- Description -->
+        {% if photo.description_parsed %}
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-tags"></i> Description
+            </div>
+            <div class="card-body">
+                {% if photo.description_parsed.objects %}
+                <h6>Objects</h6>
+                <p>
+                    {% for obj in photo.description_parsed.objects %}
+                    <span class="badge bg-secondary">{{ obj }}</span>
+                    {% endfor %}
+                </p>
+                {% endif %}
+
+                {% if photo.description_parsed.materials %}
+                <h6>Materials</h6>
+                <p>
+                    {% for mat in photo.description_parsed.materials %}
+                    <span class="badge bg-info">{{ mat }}</span>
+                    {% endfor %}
+                </p>
+                {% endif %}
+
+                {% if photo.description_parsed.setting %}
+                <h6>Setting</h6>
+                <p>
+                    {% for set in photo.description_parsed.setting %}
+                    <span class="badge bg-success">{{ set }}</span>
+                    {% endfor %}
+                </p>
+                {% endif %}
+
+                {% if photo.description_parsed.visual_attributes %}
+                <h6>Visual Attributes</h6>
+                <p>
+                    {% for attr in photo.description_parsed.visual_attributes %}
+                    <span class="badge bg-warning text-dark">{{ attr }}</span>
+                    {% endfor %}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- EXIF Data -->
+        {% if photo.exif %}
+        <div class="card mb-3">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-camera"></i> Camera & Settings
+            </div>
+            <div class="card-body">
+                {% if photo.exif.camera_make %}
+                <p><strong>Camera:</strong> {{ photo.exif.camera_make }} {{ photo.exif.camera_model }}</p>
+                {% endif %}
+                
+                {% if photo.exif.date_taken %}
+                <p><strong>Date:</strong> {{ photo.exif.date_taken }}</p>
+                {% endif %}
+
+                {% if photo.exif.width and photo.exif.height %}
+                <p><strong>Size:</strong> {{ photo.exif.width }} × {{ photo.exif.height }}</p>
+                {% endif %}
+
+                {% if photo.exif.iso %}
+                <p><strong>ISO:</strong> {{ photo.exif.iso }}</p>
+                {% endif %}
+
+                {% if photo.exif.focal_length %}
+                <p><strong>Focal Length:</strong> {{ photo.exif.focal_length }}mm</p>
+                {% endif %}
+
+                {% if photo.exif.aperture %}
+                <p><strong>Aperture:</strong> f/{{ photo.exif.aperture }}</p>
+                {% endif %}
+
+                {% if photo.exif.exposure_time %}
+                <p><strong>Exposure:</strong> {{ photo.exif.exposure_time }}s</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Location -->
+        {% if photo.location or photo.gps %}
+        <div class="card mb-3">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-geo-alt"></i> Location
+            </div>
+            <div class="card-body">
+                {% if photo.location %}
+                    <p><strong>Address:</strong><br>{{ photo.location.formatted_address or 'Unknown' }}</p>
+                    
+                    {% if photo.location.city %}
+                    <p><strong>City:</strong> {{ photo.location.city }}</p>
+                    {% endif %}
+                    
+                    {% if photo.location.state %}
+                    <p><strong>State:</strong> {{ photo.location.state }}</p>
+                    {% endif %}
+                    
+                    {% if photo.location.country %}
+                    <p><strong>Country:</strong> {{ photo.location.country }}</p>
+                    {% endif %}
+                {% endif %}
+
+                {% if photo.gps and photo.gps.latitude %}
+                <p>
+                    <strong>GPS:</strong><br>
+                    {{ "%.6f"|format(photo.gps.latitude) }}, {{ "%.6f"|format(photo.gps.longitude) }}
+                    <br>
+                    <a href="https://www.google.com/maps?q={{ photo.gps.latitude }},{{ photo.gps.longitude }}" 
+                       target="_blank" class="btn btn-sm btn-outline-primary mt-2">
+                        <i class="bi bi-map"></i> View on Map
+                    </a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- File Info -->
+        <div class="card mb-3">
+            <div class="card-header bg-secondary text-white">
+                <i class="bi bi-file-earmark"></i> File Info
+            </div>
+            <div class="card-body">
+                <p><strong>GUID:</strong><br><code>{{ photo.guid }}</code></p>
+                <p><strong>Size:</strong> {{ (photo.file_size / 1024 / 1024)|round(2) }} MB</p>
+                <p><strong>Indexed:</strong> {{ photo.indexed_at }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
