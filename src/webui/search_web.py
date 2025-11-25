@@ -208,6 +208,12 @@ def serve_photo(guid):
         return f"Error: {e}", 500
 
 
+@app.route('/browse')
+def browse_values():
+    """Browse collection values page."""
+    return render_template('browse_values.html')
+
+
 @app.route('/facets/<field>')
 def get_facets(field):
     """Get facet values for a field."""

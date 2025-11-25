@@ -8,6 +8,7 @@ Usage:
     search_cli.py --text "dog" --location-city "San Francisco"
     search_cli.py --hybrid --image query.jpg --text "sunset"
     search_cli.py --facets location.city
+    search_cli.py --location-city "Anchorage"
 """
 
 import argparse
@@ -61,8 +62,11 @@ Examples:
   # Search by text
   %(prog)s --text "dog beach sunset" --limit 10
   
-  # Filter by location
-  %(prog)s --location-city "San Francisco" --location-state "California"
+  # Filter by location only
+  %(prog)s --location-city "San Francisco"
+  
+  # Filter by location and date
+  %(prog)s --location-city "Anchorage" --date-from 2024-01-01
   
   # Filter by date range
   %(prog)s --date-from 2024-01-01 --date-to 2024-12-31
@@ -230,7 +234,7 @@ Examples:
             return
         
         # Image similarity search
-        if args.image:
+        elif args.image:
             image_path = Path(args.image)
             if not image_path.exists():
                 print(f"Error: Image not found: {image_path}", file=sys.stderr)
@@ -274,8 +278,20 @@ Examples:
                 score_threshold=args.score_threshold
             )
         
+        # Filter-only search
+        elif combined_filter:
+            print(f"\nSearching with filters only...")
+            results, _ = searcher.client.scroll(
+                collection_name=searcher.collection_name,
+                scroll_filter=combined_filter,
+                limit=args.limit,
+                with_payload=True,
+                with_vectors=False
+            )
+            results = searcher._format_results(results, include_score=False)
+        
         else:
-            print("Error: Must specify --image, --text, --hybrid, --facets, or --stats", file=sys.stderr)
+            print("Error: Must specify --image, --text, --hybrid, --facets, --stats, or at least one filter", file=sys.stderr)
             parser.print_help()
             sys.exit(1)
         

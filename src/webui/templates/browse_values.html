@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Values - Photo Search{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-list-ul"></i> Browse Collection Values
+        </h1>
+        <p class="lead">Explore unique values in your photo collection</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <!-- Category Navigation -->
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-folder"></i> Categories</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action active" data-category="location">
+                    <i class="bi bi-geo-alt"></i> Locations
+                </a>
+                <a href="#" class="list-group-item list-group-item-action" data-category="description">
+                    <i class="bi bi-tags"></i> Descriptions
+                </a>
+                <a href="#" class="list-group-item list-group-item-action" data-category="camera">
+                    <i class="bi bi-camera"></i> Cameras
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <!-- Fields in Category -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5 class="mb-0" id="categoryTitle">Locations</h5>
+            </div>
+            <div class="list-group list-group-flush" id="fieldsList">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Values Display -->
+        <div class="card" id="valuesCard" style="display: none;">
+            <div class="card-header bg-info text-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" id="fieldTitle"></h5>
+                    <button class="btn btn-sm btn-light" onclick="searchWithValue()">
+                        <i class="bi bi-search"></i> Search with selected
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Search box -->
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="valueSearch" 
+                           placeholder="Filter values...">
+                </div>
+
+                <!-- Loading -->
+                <div id="valuesLoading" class="text-center" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+
+                <!-- Values list -->
+                <div id="valuesList" style="max-height: 500px; overflow-y: auto;">
+                    <!-- Populated by JavaScript -->
+                </div>
+
+                <!-- Stats -->
+                <div id="valuesStats" class="mt-3 text-muted">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const categories = {
+        location: {
+            title: 'Locations',
+            fields: [
+                { key: 'location.city', label: 'Cities' },
+                { key: 'location.state', label: 'States/Provinces' },
+                { key: 'location.country', label: 'Countries' }
+            ]
+        },
+        description: {
+            title: 'Descriptions',
+            fields: [
+                { key: 'description_parsed.objects', label: 'Objects' },
+                { key: 'description_parsed.materials', label: 'Materials' },
+                { key: 'description_parsed.setting', label: 'Settings' },
+                { key: 'description_parsed.visual_attributes', label: 'Visual Attributes' }
+            ]
+        },
+        camera: {
+            title: 'Cameras',
+            fields: [
+                { key: 'exif.camera_make', label: 'Camera Makes' },
+                { key: 'exif.camera_model', label: 'Camera Models' }
+            ]
+        }
+    };
+
+    let currentField = null;
+    let allValues = {};
+    let selectedValue = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        // Category navigation
+        document.querySelectorAll('[data-category]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const category = link.dataset.category;
+                loadCategory(category);
+                
+                // Update active state
+                document.querySelectorAll('[data-category]').forEach(l => 
+                    l.classList.remove('active'));
+                link.classList.add('active');
+            });
+        });
+
+        // Value search filter
+        document.getElementById('valueSearch').addEventListener('input', (e) => {
+            filterValues(e.target.value);
+        });
+
+        // Load first category
+        loadCategory('location');
+    });
+
+    function loadCategory(categoryKey) {
+        const category = categories[categoryKey];
+        document.getElementById('categoryTitle').textContent = category.title;
+        
+        // Populate fields list
+        const fieldsList = document.getElementById('fieldsList');
+        fieldsList.innerHTML = '';
+        
+        category.fields.forEach(field => {
+            const item = document.createElement('a');
+            item.href = '#';
+            item.className = 'list-group-item list-group-item-action';
+            item.textContent = field.label;
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                loadFieldValues(field.key, field.label);
+            });
+            fieldsList.appendChild(item);
+        });
+    }
+
+    async function loadFieldValues(fieldKey, fieldLabel) {
+        currentField = fieldKey;
+        document.getElementById('fieldTitle').textContent = fieldLabel;
+        document.getElementById('valuesCard').style.display = 'block';
+        document.getElementById('valuesLoading').style.display = 'block';
+        document.getElementById('valuesList').innerHTML = '';
+        document.getElementById('valueSearch').value = '';
+        
+        try {
+            const response = await fetch(`/facets/${encodeURIComponent(fieldKey)}?limit=1000`);
+            const data = await response.json();
+            
+            allValues = data;
+            displayValues(data);
+            
+        } catch (error) {
+            alert('Error loading values: ' + error.message);
+        } finally {
+            document.getElementById('valuesLoading').style.display = 'none';
+        }
+    }
+
+    function displayValues(values) {
+        const valuesList = document.getElementById('valuesList');
+        valuesList.innerHTML = '';
+        
+        if (Object.keys(values).length === 0) {
+            valuesList.innerHTML = '<p class="text-muted">No values found</p>';
+            return;
+        }
+
+        const totalPhotos = Object.values(values).reduce((a, b) => a + b, 0);
+        
+        // Create value items
+        for (const [value, count] of Object.entries(values)) {
+            const item = document.createElement('div');
+            item.className = 'value-item d-flex justify-content-between align-items-center p-2 border-bottom';
+            item.style.cursor = 'pointer';
+            
+            item.innerHTML = `
+                <div>
+                    <strong>${escapeHtml(value)}</strong>
+                </div>
+                <div>
+                    <span class="badge bg-primary">${count}</span>
+                </div>
+            `;
+            
+            item.addEventListener('click', () => {
+                selectedValue = value;
+                // Highlight selected
+                document.querySelectorAll('.value-item').forEach(i => 
+                    i.classList.remove('bg-light'));
+                item.classList.add('bg-light');
+            });
+            
+            valuesList.appendChild(item);
+        }
+
+        // Show stats
+        document.getElementById('valuesStats').innerHTML = `
+            <strong>${Object.keys(values).length}</strong> unique values | 
+            <strong>${totalPhotos}</strong> photos
+        `;
+    }
+
+    function filterValues(searchText) {
+        if (!searchText) {
+            displayValues(allValues);
+            return;
+        }
+        
+        const filtered = {};
+        const lower = searchText.toLowerCase();
+        
+        for (const [value, count] of Object.entries(allValues)) {
+            if (value.toLowerCase().includes(lower)) {
+                filtered[value] = count;
+            }
+        }
+        
+        displayValues(filtered);
+    }
+
+    function searchWithValue() {
+        if (!selectedValue) {
+            alert('Please select a value first');
+            return;
+        }
+        
+        // Construct search URL based on field type
+        let searchUrl = '/';
+        
+        if (currentField.startsWith('location.')) {
+            const locType = currentField.split('.')[1];
+            searchUrl += `?filter=${locType}&value=${encodeURIComponent(selectedValue)}`;
+        } else if (currentField.startsWith('description_parsed.')) {
+            searchUrl += `?text=${encodeURIComponent(selectedValue)}`;
+        } else if (currentField.startsWith('exif.camera_')) {
+            const camType = currentField.split('.')[1].replace('camera_', '');
+            searchUrl += `?filter=camera_${camType}&value=${encodeURIComponent(selectedValue)}`;
+        }
+        
+        window.location.href = searchUrl;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+
+<style>
+    .value-item:hover {
+        background-color: #f8f9fa;
+    }
+    .value-item.bg-light {
+        background-color: #e9ecef !important;
+    }
+</style>
+{% endblock %}
