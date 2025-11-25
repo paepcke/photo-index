@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-24 10:14:13
+# @Last Modified time: 2025-11-24 10:57:11
 """Configuration for photo indexing system."""
 
 # Actions
@@ -72,7 +72,7 @@ MODEL_PATH = "/data/huggingface/hub/models--meta-llama--Llama-3.2-11B-Vision-Ins
 DEVICE = "cuda"  # Use GPU
 BATCH_SIZE = 8  # Adjust based on VRAM
 EMBEDDING_DIM = 7680  # Llama 3.2-Vision 11B output dimension
-OUTPUT_TOKENS = 100
+OUTPUT_TOKENS = 150
 
 # File extensions to process
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.heic', '.HEIC', '.JPG', '.JPEG'}

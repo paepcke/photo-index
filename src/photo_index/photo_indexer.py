@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-24 09:56:47
+# @Last Modified time: 2025-11-24 17:42:14
 
 """
 Main photo indexing system. Instead of CLI args, uses
@@ -29,7 +29,8 @@ from photo_index.utils import timed, Utils
 from photo_index.config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
     EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, EMBEDDING_DIM, 
-    IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, MODEL_PATH, GEN_IMG_DESCRIPTIONS
+    IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, MODEL_PATH, GEN_IMG_DESCRIPTIONS,
+    IMG_DESC_PROMPT
 )
 from photo_index.exif_utils import ExifExtractor
 from photo_index.embedding_generator import EmbeddingGenerator
@@ -179,30 +180,51 @@ class PhotoIndexer:
             # If requested, also generate image descriptions
             description = None
             if GEN_IMG_DESCRIPTIONS == 1:
-                #with timed(f'Description {photo_path.name}', self.log):
-                #    description = self.embedding_generator.generate_description(photo_path)  # FIX: Added photo_path
-                description = self.embedding_generator.generate_description(photo_path)  # FIX: Added photo_path
-                if description:
-                    try:
-                        description_parsed = json.loads(description)
-                    except json.JSONDecodeError as e:
-                        # Log the bad JSON
-                        self.log.warn(f"JSON parse failed for {photo_path.name}")
-                        self.log.warn(f"  Error at position {e.pos}: {e.msg}")
-                        self.log.warn(f"  Raw description length: {len(description)} chars")
-                        
-                        # Write to file for inspection
-                        bad_json_file = Path(f"/tmp/bad_json_{photo_path.stem}.txt")
-                        bad_json_file.write_text(f"Photo: {photo_path}\n\nError: {e}\n\nJSON:\n{description}")
-                        self.log.warn(f"  Saved to: {bad_json_file}")
-                        
-                        # Try to fix common issues
-                        description_parsed = self._try_fix_json(description)
-                        if description_parsed:
-                            self.log.info(f"  ✓ Auto-fixed JSON for {photo_path.name}")
-                        else:
-                            self.log.warn(f"  ✗ Could not auto-fix JSON")
-                            # Still continue - store raw description
+                retried_once = False
+                prompt = IMG_DESC_PROMPT
+                while True:
+                    description = self.embedding_generator.generate_description(
+                        photo_path,
+                        prompt=prompt
+                        )
+                    if description:
+                        try:
+                            description_parsed = json.loads(description)
+                            # All good, no retry:
+                            break
+                        except json.JSONDecodeError as e:
+                            self.description_failures += 1
+                            # Log the bad JSON
+                            # self.log.warn(f"JSON parse failed for {photo_path.name}")
+                            # self.log.warn(f"  Error at position {e.pos}: {e.msg}")
+                            # self.log.warn(f"  Raw description length: {len(description)} chars")
+                                                
+                            # Try to fix common issues
+                            description_parsed = self._try_fix_json(description)
+                            if description_parsed:
+                                self.description_failures_fixed += 1
+                                self.log.info(f"  ✓ Auto-fixed JSON for {photo_path.name}")
+                                # All good, no retry:
+                                break
+                            else:
+                                self.log.warn(f"  ✗ Could not auto-fix JSON")
+                                if not retried_once:
+                                    # Retry once asking the model, with a correction request:
+                                    prompt = (f'I gave you the following prompt:"{IMG_DESC_PROMPT}" for this image. You returned the following description:\n'
+                                            f'{description}\n'
+                                            'You see that this is not proper JSON. Can you try again? '
+                                            'No text other than JSON!'
+                                            )
+                                    retried_once = True
+                                    self.log.warn("  Retrying model for correction...")
+                                    continue
+                                # We retried once; give up:
+                                # Write to file for inspection
+                                bad_json_file = Path(f"/tmp/bad_json_{photo_path.stem}.txt")
+                                bad_json_file.write_text(f"Photo: {photo_path}\n\nError after retry: {e}\n\nJSON:\n{description}")
+                                self.log.warn(f"  Saved to: {bad_json_file}")
+                                break
+
             
             # Extract EXIF
             #with timed(f'EXIF {photo_path.name}', self.log):
@@ -277,23 +299,20 @@ class PhotoIndexer:
             List of Qdrant points
         """
         points = []
-
-        num_photos = len(photo_paths)        
-        with timed('indexing all photos', self.log) as timer:
-            for i, photo_path in enumerate(photo_paths):
-                result = self.index_photo(photo_path)
-                if result:
-                    # Use GUID-based point ID
-                    point_id = Utils.guid_to_point_id(result['guid'])  # CHANGE: Use GUID
-                    
-                    point = PointStruct(
-                        id=point_id,
-                        vector=result['embedding'].tolist(),
-                        payload=result['payload']
-                    )
-                    
-                    points.append(point)
-                    timer.progress(i, every=time_report_every, total=num_photos)
+    
+        for i, photo_path in enumerate(photo_paths):
+            result = self.index_photo(photo_path)
+            if result:
+                # Use GUID-based point ID
+                point_id = Utils.guid_to_point_id(result['guid'])  # CHANGE: Use GUID
+                
+                point = PointStruct(
+                    id=point_id,
+                    vector=result['embedding'].tolist(),
+                    payload=result['payload']
+                )
+                
+                points.append(point)
         
         return points
     
@@ -325,17 +344,34 @@ class PhotoIndexer:
         self.log.info(f"Indexing {len(photo_paths)} photos...")
         
         # Process in batches
-        for i in tqdm(range(0, len(photo_paths), self.batch_size), desc="Indexing batches"):
-            batch = photo_paths[i:i + self.batch_size]
-            points = self.index_batch(batch, time_report_every=time_report_every)
-            
-            if points:
-                # Upload to Qdrant
-                self.qdrant_client.upsert(
-                    collection_name=self.collection_name,
-                    points=points
-                )
-        self.log.info(f"Indexing complete! Indexed {len(photo_paths)} photos")
+        #for i in tqdm(range(0, len(photo_paths), self.batch_size), desc="Indexing batches"):
+        num_photos = len(photo_paths)
+        # No model-generated image descriptions that are
+        # JSON parsable:
+        self.description_failures = 0
+        # No failures fixed yet either:
+        self.description_failures_fixed = 0
+        with timed('indexing all photos') as timer:
+            for i in range(0, num_photos, self.batch_size):
+                batch = photo_paths[i:i + self.batch_size]
+                points = self.index_batch(batch, time_report_every=time_report_every)
+                timer.progress(i+self.batch_size, every=self.batch_size, total=num_photos)
+                
+                if points:
+                    # Upload to Qdrant
+                    self.qdrant_client.upsert(
+                        collection_name=self.collection_name,
+                        points=points
+                    )
+        log_msg = (f"Indexing complete! Indexed {len(photo_paths)} photos.")                    
+        if GEN_IMG_DESCRIPTIONS:
+            log_msg = (f"Indexing complete! Indexed {len(photo_paths)} photos. "
+                       f"\n    Malformed img descriptions: {self.description_failures}"
+                       f"\n    Fixed img descriptions:     {self.description_failures_fixed}"
+                       f"\n    Total missing descriptions: {self.description_failures - self.description_failures_fixed}"
+            )
+        self.log.info(log_msg)
+
         self._print_stats()
     
     def _get_indexed_paths(self) -> set:
@@ -381,32 +417,14 @@ class PhotoIndexer:
         except Exception as e:
             print(f"Error getting stats: {e}")
 
-
     def _try_fix_json(self, json_str: str) -> Optional[dict]:
         """Attempt to fix common JSON formatting issues."""
         import re
         
-        # First, try to fix truncated JSON
-        if not json_str.strip().endswith('}'):
-            # Truncated - try to close arrays and object
-            fixed = json_str.rstrip()
-            # Close any unclosed strings
-            if fixed.count('"') % 2 == 1:
-                fixed += '"'
-            # Close arrays
-            open_brackets = fixed.count('[') - fixed.count(']')
-            fixed += ']' * open_brackets
-            # Close object
-            if not fixed.endswith('}'):
-                fixed += ' }'
-            
-            try:
-                return json.loads(fixed)
-            except:
-                pass
-        
-        # Then try other fixes...
         fixes = [
+            ('leading_text', lambda s: s[s.find('{'):] if '{' in s else s),
+            ('trailing_text', lambda s: s[:s.rfind('}')+1] if '}' in s else s),
+            ('remove_escaped_newlines', lambda s: s.replace('\\n', '')),
             ('markdown', lambda s: re.sub(r'```json\s*|\s*```', '', s)),
             ('whitespace', lambda s: s.strip()),
             ('trailing_brace', lambda s: re.sub(r',\s*}', '}', s)),
@@ -414,15 +432,22 @@ class PhotoIndexer:
         ]
         
         current = json_str
+        
         for name, fix_func in fixes:
             try:
                 current = fix_func(current)
-                result = json.loads(current)
-                return result
-            except:
+            except Exception as e:
+                self.log.warn(f"    Exception in fix '{name}': {e} (applying next fix(s))")
                 continue
         
-        return None
+        # Now try to parse
+        try:
+            result = json.loads(current)
+            self.log.debug(f"    ✓ Successfully parsed JSON")
+            return result
+        except json.JSONDecodeError as e:
+            self.log.debug(f"    ✗ Parse failed after all fixes: {e.msg} at position {e.pos}")
+            return None
 
 
     def reindex_photo(self, photo_path: Path):
