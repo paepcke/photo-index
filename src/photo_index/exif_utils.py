@@ -1,8 +1,9 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-22 17:52:50
+# @Last Modified time: 2025-11-27 10:44:55
 """EXIF data extraction and GPS utilities."""
 
 from PIL import Image

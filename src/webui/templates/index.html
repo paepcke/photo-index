@@ -104,8 +104,14 @@
                             <!-- Date Filters -->
                             <div class="col-md-4 mb-3">
                                 <h6><i class="bi bi-calendar"></i> Date Range</h6>
-                                <input type="date" class="form-control mb-2" name="date_from" placeholder="From" max="2099-12-31">
-                                <input type="date" class="form-control" name="date_to" placeholder="To" max="2099-12-31">
+                                <input type="date" class="form-control mb-2" name="date_from" 
+                                       placeholder="From (YYYY-MM-DD)" 
+                                       min="2000-01-01" max="2099-12-31"
+                                       title="Click or type date (YYYY-MM-DD)">
+                                <input type="date" class="form-control" name="date_to" 
+                                       placeholder="To (YYYY-MM-DD)"
+                                       min="2000-01-01" max="2099-12-31"
+                                       title="Click or type date (YYYY-MM-DD)">
                             </div>
 
                             <!-- Camera Filters -->

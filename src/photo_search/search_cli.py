@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-25 16:12:13
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 11:03:42
+# -*- coding: utf-8 -*-
 """
 CLI tool for searching indexed photos.
 
@@ -17,6 +22,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 
+from common.utils import Utils
 from photo_search.photo_search import PhotoSearch, FilterBuilder
 
 
@@ -248,7 +254,6 @@ Examples:
             print(f"\nFinding photos similar to: {similar_path.name}")
             
             # Get GUID from photo
-            from photo_search.utils import Utils
             guid = Utils.get_photo_guid(similar_path)
             
             results = searcher.search_similar_to_guid(

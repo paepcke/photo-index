@@ -1,11 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# @Author: Andreas Paepcke
-# @Date:   2025-11-25 17:08:27
-# @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-27 08:57:38
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Flask web UI for photo search.
 
@@ -75,15 +69,10 @@ def search():
             if location_filter:
                 filters.append(location_filter)
         
-        # Date filters
+        # Date filters (handled post-retrieval since dates are stored as strings)
         date_from = request.form.get('date_from', '').strip()
         date_to = request.form.get('date_to', '').strip()
-        if date_from or date_to:
-            if not date_from:
-                date_from = '1900-01-01'
-            if not date_to:
-                date_to = '2100-12-31'
-            filters.append(FilterBuilder.by_date_range(date_from, date_to))
+        # Don't add to Qdrant filters - will filter results after retrieval
         
         # Camera filters
         camera_make = request.form.get('camera_make', '').strip()
@@ -163,6 +152,24 @@ def search():
                     with_vectors=False
                 )
                 results = searcher._format_results(results, include_score=False)
+        
+        # Apply date filtering post-retrieval (dates stored as strings, not in Qdrant filter)
+        if date_from or date_to:
+            if not date_from:
+                date_from = '1900-01-01'
+            if not date_to:
+                date_to = '2100-12-31'
+            
+            # Add time component for inclusive comparison
+            date_from_full = date_from + 'T00:00:00'  # Start of day
+            date_to_full = date_to + 'T23:59:59'      # End of day
+            
+            # Filter results by date
+            results = [
+                r for r in results
+                if r.get('date_taken') and 
+                   date_from_full <= r['date_taken'] <= date_to_full
+            ]
         
         # Format results for JSON
         formatted_results = []
@@ -299,7 +306,7 @@ def delete_photo(guid):
         file_name = photo['file_name']
         
         # Delete from index
-        from photo_search.utils import Utils
+        from common.utils import Utils
         point_id = Utils.guid_to_point_id(guid)
         
         searcher.client.delete(

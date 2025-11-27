@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-24 09:56:00
+# @Last Modified time: 2025-11-27 11:05:31
 """Image embedding generation using Llama 3.2-Vision model."""
 
 import torch
@@ -15,12 +15,10 @@ import numpy as np
 
 from logging_service import LoggingService
 
-from photo_index.config import IMG_DESC_PROMPT, OUTPUT_TOKENS
+from common.config import IMG_DESC_PROMPT, OUTPUT_TOKENS
 
 # Register HEIF opener
 pillow_heif.register_heif_opener()
-
-
 
 class EmbeddingGenerator:
     """Generate image embeddings using Llama 3.2-Vision model."""

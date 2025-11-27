@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-27 10:04:46
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 11:02:56
 """Main photo indexing system."""
 
 from pathlib import Path
@@ -8,16 +14,16 @@ from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
-from config import (
+from common.config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
     EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
     GEN_IMG_DESCRIPTIONS, IMG_DESC_PROMPT
 )
-from exif_utils import ExifExtractor
-from embedding_generator import EmbeddingGenerator
-from mac_metadata import MacMetadataExtractor
-from geocoding import Geocoder
-from utils import Utils
+from photo_index.exif_utils import ExifExtractor
+from photo_index.embedding_generator import EmbeddingGenerator
+from photo_index.mac_metadata import MacMetadataExtractor
+from photo_index.geocoding import Geocoder
+from common.utils import Utils
 
 try:
     from description_parser import DescriptionParser

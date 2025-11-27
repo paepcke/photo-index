@@ -1,9 +1,9 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Author: Andreas Paepcke
 # @Date:   2025-11-26 18:52:29
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-26 19:58:47
-#!/usr/bin/env python
+# @Last Modified time: 2025-11-27 10:46:54
 # -*- coding: utf-8 -*-
 """
 Test Qdrant server connection.

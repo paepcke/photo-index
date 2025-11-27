@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-25 16:09:09
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 11:02:50
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
@@ -18,15 +23,9 @@ from datetime import datetime
 from typing import List, Set, Optional
 
 # Assuming photo_indexer package structure
-try:
-    from photo_index.photo_indexer import PhotoIndexer
-    from photo_index.utils import Utils
-    from photo_index.config import PHOTO_DIR
-except ImportError:
-    # Fallback for different structure
-    from photo_indexer import PhotoIndexer
-    from utils import Utils
-    from config import PHOTO_DIR
+from photo_index.photo_indexer import PhotoIndexer
+from common.utils import Utils
+from common.config import PHOTO_DIR
 
 
 def check_photo_indexed(indexer: PhotoIndexer, photo_path: Path) -> bool:

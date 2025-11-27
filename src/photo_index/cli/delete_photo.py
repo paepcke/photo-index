@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-23 17:38:52
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 11:03:51
+# -*- coding: utf-8 -*-
 """
 Delete photos from the index and optionally from disk.
 
@@ -14,8 +19,8 @@ import sys
 from pathlib import Path
 from qdrant_client import QdrantClient
 
-from photo_index.utils import Utils
-from photo_index.config import QDRANT_PATH, COLLECTION_NAME
+from common.utils import Utils
+from common.config import QDRANT_PATH, COLLECTION_NAME
 
 
 def confirm_deletion(photo_paths, delete_from_disk):

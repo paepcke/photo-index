@@ -1,9 +1,9 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Author: Andreas Paepcke
 # @Date:   2025-11-25 16:39:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-26 18:45:08
-#!/usr/bin/env python
+# @Last Modified time: 2025-11-27 11:00:11
 # -*- coding: utf-8 -*-
 """
 Photo search class for querying indexed photos.
@@ -22,8 +22,8 @@ from qdrant_client.models import (
 )
 
 from photo_index.embedding_generator import EmbeddingGenerator
-from photo_index.utils import Utils
-from photo_index.config import (
+from common.utils import Utils
+from common.config import (
     QDRANT_PATH, QDRANT_HOST, QDRANT_PORT, COLLECTION_NAME, MODEL_PATH, DEVICE
 )
 

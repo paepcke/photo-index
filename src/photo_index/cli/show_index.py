@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-23 17:38:40
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 11:03:47
+# -*- coding: utf-8 -*-
 """
 Show the indexed payload for a photo from Qdrant.
 
@@ -14,8 +19,8 @@ from pathlib import Path
 import json
 from qdrant_client import QdrantClient
 
-from photo_index.utils import Utils
-from photo_index.config import QDRANT_PATH, COLLECTION_NAME
+from common.utils import Utils
+from common.config import QDRANT_PATH, COLLECTION_NAME
 
 
 def format_payload(payload, indent=0):

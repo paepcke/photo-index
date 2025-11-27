@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-18 15:27:01
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 11:03:10
 """Extract metadata from Mac AppleDouble (._) files."""
 
 import struct
