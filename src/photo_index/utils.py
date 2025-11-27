@@ -179,6 +179,54 @@ class Utils:
         """
         return int(guid, 16) % (2**63)
 
+    # ---------------------- JSON Fixing -------------------------
+
+    @staticmethod
+    def try_fix_json(json_str: str):
+        """Attempt to fix common JSON formatting issues from LLM outputs.
+        
+        Applies a series of fix strategies to handle common malformed JSON
+        from language models (extra text, markdown blocks, trailing commas, etc.)
+        
+        Args:
+            json_str: Potentially malformed JSON string
+            
+        Returns:
+            Parsed dict if successful, None otherwise
+            
+        Example:
+            >>> bad_json = '```json\\n{"key": "value",}\\n```'
+            >>> Utils.try_fix_json(bad_json)
+            {'key': 'value'}
+        """
+        import re
+        import json
+        
+        fixes = [
+            ('leading_text', lambda s: s[s.find('{'):] if '{' in s else s),
+            ('trailing_text', lambda s: s[:s.rfind('}')+1] if '}' in s else s),
+            ('remove_escaped_newlines', lambda s: s.replace('\\n', '')),
+            ('markdown', lambda s: re.sub(r'```json\s*|\s*```', '', s)),
+            ('whitespace', lambda s: s.strip()),
+            ('trailing_comma_brace', lambda s: re.sub(r',\s*}', '}', s)),
+            ('trailing_comma_bracket', lambda s: re.sub(r',\s*]', ']', s)),
+        ]
+        
+        current = json_str
+        
+        for name, fix_func in fixes:
+            try:
+                current = fix_func(current)
+            except Exception:
+                # Continue to next fix even if this one fails
+                continue
+        
+        # Try to parse the fixed JSON
+        try:
+            return json.loads(current)
+        except json.JSONDecodeError:
+            return None
+
     # ---------------------- Miscellaneous -------------------------
 
     @staticmethod

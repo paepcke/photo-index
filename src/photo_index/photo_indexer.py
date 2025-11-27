@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-# @Author: Andreas Paepcke
-# @Date:   2025-11-26 20:26:22
-# @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-26 20:30:22
 """Main photo indexing system."""
 
 from pathlib import Path
@@ -15,7 +10,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
-    EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    EMBEDDING_DIM, MODEL_NAME, DEVICE, BATCH_SIZE, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
+    GEN_IMG_DESCRIPTIONS, IMG_DESC_PROMPT
 )
 from exif_utils import ExifExtractor
 from embedding_generator import EmbeddingGenerator
@@ -168,15 +164,62 @@ class PhotoIndexer:
             # Generate embedding
             embedding = self.embedding_generator.generate_embedding(photo_path)
             
-            # Generate description
-            description = self.embedding_generator.generate_description(photo_path)
-            
-            # Parse description
-            if DescriptionParser:
-                description_parsed = DescriptionParser.parse(description)
+            # Generate description (if requested in config)
+            description = None
+            description_parsed = None
+            if GEN_IMG_DESCRIPTIONS == 1:
+                retried_once = False
+                prompt = IMG_DESC_PROMPT
+                while True:
+                    description = self.embedding_generator.generate_description(
+                        photo_path,
+                        prompt=prompt
+                    )
+                    if description:
+                        try:
+                            description_parsed = json.loads(description)
+                            # Success! No retry needed
+                            break
+                        except json.JSONDecodeError as e:
+                            self.description_failures += 1
+                            
+                            # Try to fix common issues
+                            description_parsed = Utils.try_fix_json(description)
+                            if description_parsed:
+                                self.description_failures_fixed += 1
+                                print(f"  ✓ Auto-fixed JSON for {photo_path.name}")
+                                # Success! No retry needed
+                                break
+                            else:
+                                print(f"  ✗ Could not auto-fix JSON for {photo_path.name}")
+                                if not retried_once:
+                                    # Retry once with correction request
+                                    prompt = (f'I gave you the following prompt: "{IMG_DESC_PROMPT}" for this image. '
+                                             f'You returned: {description}\n'
+                                             'This is not proper JSON. Can you try again? '
+                                             'No text other than JSON!')
+                                    retried_once = True
+                                    print("  Retrying with correction request...")
+                                    continue
+                                # We retried; give up and save bad JSON
+                                bad_json_file = Path(f"/tmp/bad_json_{photo_path.stem}.txt")
+                                bad_json_file.write_text(
+                                    f"Photo: {photo_path}\n\nError: {e}\n\nJSON:\n{description}"
+                                )
+                                print(f"  Saved bad JSON to: {bad_json_file}")
+                                break
+                    else:
+                        # No description returned
+                        break
             else:
-                # Inline parsing as fallback
-                description_parsed = self._parse_description_inline(description)
+                # GEN_IMG_DESCRIPTIONS is disabled, use empty description
+                description = ""
+                description_parsed = {
+                    'objects': [],
+                    'materials': [],
+                    'setting': [],
+                    'visual_attributes': []
+                }
             
             # Extract EXIF
             exif_data = self.exif_extractor.extract_exif(photo_path)
@@ -326,6 +369,10 @@ class PhotoIndexer:
         
         print(f"Indexing {len(photo_paths)} photos...")
         
+        # Initialize description failure counters
+        self.description_failures = 0
+        self.description_failures_fixed = 0
+        
         # Process in batches
         for i in tqdm(range(0, len(photo_paths), self.batch_size), desc="Indexing batches"):
             batch = photo_paths[i:i + self.batch_size]
@@ -338,7 +385,13 @@ class PhotoIndexer:
                     points=points
                 )
         
-        print(f"Indexing complete! Indexed {len(photo_paths)} photos")
+        # Completion message with stats
+        log_msg = f"Indexing complete! Indexed {len(photo_paths)} photos"
+        if GEN_IMG_DESCRIPTIONS == 1:
+            log_msg += (f"\n  Malformed descriptions: {self.description_failures}"
+                       f"\n  Auto-fixed: {self.description_failures_fixed}"
+                       f"\n  Total missing: {self.description_failures - self.description_failures_fixed}")
+        print(log_msg)
         self._print_stats()
     
     def _get_indexed_paths(self) -> set:
