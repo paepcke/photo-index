@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-25 10:17:19
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-25 11:26:44
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 List unique values in your photo collection.
 
@@ -11,7 +17,7 @@ Usage:
 
 import argparse
 import sys
-from photo_search import PhotoSearch
+from photo_search.photo_search import PhotoSearch
 
 
 # Common fields that users might want to explore

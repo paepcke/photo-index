@@ -17,7 +17,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 
-from photo_search import PhotoSearch, FilterBuilder
+from photo_search.photo_search import PhotoSearch, FilterBuilder
 
 
 def format_result(result: dict, index: int, verbose: bool = False):
@@ -89,6 +89,11 @@ Examples:
         '--image', '-i',
         type=str,
         help='Path to query image (visual similarity search)'
+    )
+    search_group.add_argument(
+        '--similar', '-s',
+        type=str,
+        help='Path to photo to find similar images (uses its embedding)'
     )
     search_group.add_argument(
         '--text', '-t',
@@ -232,6 +237,26 @@ Examples:
                 for value, count in list(facets.items())[:args.limit]:
                     print(f"  {value}: {count}")
             return
+        
+        # Find similar photos
+        elif args.similar:
+            similar_path = Path(args.similar)
+            if not similar_path.exists():
+                print(f"Error: Photo not found: {similar_path}", file=sys.stderr)
+                sys.exit(1)
+            
+            print(f"\nFinding photos similar to: {similar_path.name}")
+            
+            # Get GUID from photo
+            from photo_search.utils import Utils
+            guid = Utils.get_photo_guid(similar_path)
+            
+            results = searcher.search_similar_to_guid(
+                guid,
+                limit=args.limit,
+                filters=combined_filter,
+                score_threshold=args.score_threshold
+            )
         
         # Image similarity search
         elif args.image:

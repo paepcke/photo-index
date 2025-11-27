@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-18 15:27:01
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-24 10:57:11
+# @Last Modified time: 2025-11-26 20:04:10
 """Configuration for photo indexing system."""
 
 # Actions

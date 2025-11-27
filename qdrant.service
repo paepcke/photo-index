@@ -1,0 +1,46 @@
+# Qdrant Vector Database Service
+# This service manages the Qdrant Docker container for photo search indexing
+#
+# Installation:
+#   sudo cp qdrant.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable qdrant
+#   sudo systemctl start qdrant
+#
+# Management:
+#   sudo systemctl status qdrant
+#   sudo systemctl restart qdrant
+#   sudo systemctl stop qdrant
+
+[Unit]
+Description=Qdrant Vector Database Container
+Documentation=https://qdrant.tech/documentation/
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Stop any existing container
+ExecStartPre=-/usr/bin/docker stop qdrant
+ExecStartPre=-/usr/bin/docker rm qdrant
+
+# Start the container
+ExecStart=/usr/bin/docker run -d \
+  --name qdrant \
+  --restart unless-stopped \
+  -p 6333:6333 \
+  -p 6334:6334 \
+  -v /raid/qdrant_storage/photos:/qdrant/storage \
+  qdrant/qdrant
+
+# Stop the container
+ExecStop=/usr/bin/docker stop qdrant
+
+# Restart settings
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

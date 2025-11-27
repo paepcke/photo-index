@@ -104,8 +104,8 @@
                             <!-- Date Filters -->
                             <div class="col-md-4 mb-3">
                                 <h6><i class="bi bi-calendar"></i> Date Range</h6>
-                                <input type="date" class="form-control mb-2" name="date_from" placeholder="From">
-                                <input type="date" class="form-control" name="date_to" placeholder="To">
+                                <input type="date" class="form-control mb-2" name="date_from" placeholder="From" max="2099-12-31">
+                                <input type="date" class="form-control" name="date_to" placeholder="To" max="2099-12-31">
                             </div>
 
                             <!-- Camera Filters -->
@@ -134,6 +134,9 @@
                 <!-- Submit -->
                 <button type="submit" class="btn btn-primary btn-lg">
                     <i class="bi bi-search"></i> Search
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-lg ms-2" onclick="clearSearch()">
+                    <i class="bi bi-x-circle"></i> Clear Search
                 </button>
             </form>
         </div>
@@ -200,6 +203,19 @@
         }
     });
 
+    // Check for findSimilar parameter on page load
+    window.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const findSimilarGuid = urlParams.get('findSimilar');
+        
+        if (findSimilarGuid) {
+            // Clear URL parameter
+            window.history.replaceState({}, '', '/');
+            // Trigger find similar
+            findSimilar(findSimilarGuid);
+        }
+    });
+
     function displayResults(results) {
         if (results.length === 0) {
             noResults.style.display = 'block';
@@ -221,7 +237,6 @@
     function createPhotoCard(photo) {
         const card = document.createElement('div');
         card.className = 'photo-card';
-        card.onclick = () => window.location.href = `/photo/${photo.guid}`;
         
         let description = '';
         if (photo.description && photo.description.objects) {
@@ -235,7 +250,7 @@
         
         card.innerHTML = `
             <div style="position: relative;">
-                <img src="${photo.thumbnail_url}" alt="${photo.file_name}" loading="lazy">
+                <img src="${photo.thumbnail_url}" alt="${photo.file_name}" loading="lazy" onclick="window.location.href='/photo/${photo.guid}'">
                 ${photo.score ? `<span class="score-badge">${(photo.score * 100).toFixed(0)}%</span>` : ''}
             </div>
             <div class="photo-card-body">
@@ -243,10 +258,43 @@
                 ${photo.date_taken ? `<div class="photo-card-meta"><i class="bi bi-calendar"></i> ${formatDate(photo.date_taken)}</div>` : ''}
                 ${location ? `<div class="photo-card-meta"><i class="bi bi-geo-alt"></i> ${location}</div>` : ''}
                 ${description ? `<div class="photo-card-meta"><i class="bi bi-tag"></i> ${description}</div>` : ''}
+                <button class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="findSimilar('${photo.guid}', event)">
+                    <i class="bi bi-images"></i> Find Similar
+                </button>
             </div>
         `;
         
         return card;
+    }
+
+    async function findSimilar(guid, event) {
+        // Stop event propagation so card click doesn't fire
+        if (event) {
+            event.stopPropagation();
+        }
+        
+        // Show loading
+        loadingOverlay.classList.add('active');
+        
+        try {
+            const response = await fetch(`/similar/${guid}?limit=20`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to find similar photos');
+            }
+            
+            const data = await response.json();
+            displayResults(data.results);
+            
+            // Update title to indicate this is a similarity search
+            resultsTitle.textContent = `${data.results.length} Similar Photo${data.results.length !== 1 ? 's' : ''}`;
+            
+        } catch (error) {
+            alert('Error: ' + error.message);
+        } finally {
+            loadingOverlay.classList.remove('active');
+        }
     }
 
     function formatDate(isoDate) {
@@ -263,5 +311,100 @@
         noResults.style.display = 'none';
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
+    function clearSearch() {
+        // Reset the form
+        searchForm.reset();
+        
+        // Clear file inputs manually (reset doesn't always work for files)
+        document.getElementById('queryImage').value = '';
+        document.getElementById('hybridImage').value = '';
+        
+        // Clear results
+        clearResults();
+        
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Initialize autocomplete on all text search fields
+    document.addEventListener('DOMContentLoaded', () => {
+        // Main text search field - searches across description fields
+        const textQueryInput = document.getElementById('textQuery');
+        if (textQueryInput) {
+            new Autocomplete(textQueryInput, {
+                fields: [
+                    'description_parsed.objects',
+                    'description_parsed.materials',
+                    'description_parsed.setting',
+                    'description_parsed.visual_attributes'
+                ],
+                minChars: 2,
+                maxResults: 15
+            });
+        }
+
+        // Hybrid text search field
+        const hybridTextInput = document.getElementById('hybridText');
+        if (hybridTextInput) {
+            new Autocomplete(hybridTextInput, {
+                fields: [
+                    'description_parsed.objects',
+                    'description_parsed.materials',
+                    'description_parsed.setting',
+                    'description_parsed.visual_attributes'
+                ],
+                minChars: 2,
+                maxResults: 15
+            });
+        }
+
+        // Location fields
+        const locationCityInputs = document.querySelectorAll('input[name="location_city"]');
+        locationCityInputs.forEach(input => {
+            new Autocomplete(input, {
+                fields: ['location.city'],
+                minChars: 1,
+                maxResults: 20
+            });
+        });
+
+        const locationStateInputs = document.querySelectorAll('input[name="location_state"]');
+        locationStateInputs.forEach(input => {
+            new Autocomplete(input, {
+                fields: ['location.state'],
+                minChars: 1,
+                maxResults: 20
+            });
+        });
+
+        const locationCountryInputs = document.querySelectorAll('input[name="location_country"]');
+        locationCountryInputs.forEach(input => {
+            new Autocomplete(input, {
+                fields: ['location.country'],
+                minChars: 1,
+                maxResults: 20
+            });
+        });
+
+        // Camera fields
+        const cameraMakeInputs = document.querySelectorAll('input[name="camera_make"]');
+        cameraMakeInputs.forEach(input => {
+            new Autocomplete(input, {
+                fields: ['exif.camera_make'],
+                minChars: 1,
+                maxResults: 15
+            });
+        });
+
+        const cameraModelInputs = document.querySelectorAll('input[name="camera_model"]');
+        cameraModelInputs.forEach(input => {
+            new Autocomplete(input, {
+                fields: ['exif.camera_model'],
+                minChars: 1,
+                maxResults: 15
+            });
+        });
+    });
 </script>
 {% endblock %}

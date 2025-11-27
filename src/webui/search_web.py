@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-25 17:08:27
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-27 08:57:38
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 Flask web UI for photo search.
 
@@ -15,7 +21,7 @@ from flask import Flask, render_template, request, jsonify, send_file, url_for
 from werkzeug.utils import secure_filename
 import tempfile
 
-from photo_search import PhotoSearch, FilterBuilder
+from photo_search.photo_search import PhotoSearch, FilterBuilder
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -136,15 +142,27 @@ def search():
                 filepath.unlink()
         
         else:
-            # Text search
-            if not text_query:
-                return jsonify({'error': 'No search query provided'}), 400
+            # Text search or filter-only search
+            if not text_query and not combined_filter:
+                return jsonify({'error': 'No search query or filters provided'}), 400
             
-            results = searcher.search_by_text(
-                text_query,
-                limit=limit,
-                filters=combined_filter
-            )
+            if text_query:
+                # Text search with optional filters
+                results = searcher.search_by_text(
+                    text_query,
+                    limit=limit,
+                    filters=combined_filter
+                )
+            else:
+                # Filter-only search
+                results, _ = searcher.client.scroll(
+                    collection_name=searcher.collection_name,
+                    scroll_filter=combined_filter,
+                    limit=limit,
+                    with_payload=True,
+                    with_vectors=False
+                )
+                results = searcher._format_results(results, include_score=False)
         
         # Format results for JSON
         formatted_results = []
@@ -214,6 +232,116 @@ def browse_values():
     return render_template('browse_values.html')
 
 
+@app.route('/similar/<guid>')
+def find_similar(guid):
+    """Find photos similar to a given photo by GUID."""
+    try:
+        searcher = get_searcher()
+        limit = int(request.args.get('limit', 20))
+        score_threshold = request.args.get('score_threshold')
+        if score_threshold:
+            score_threshold = float(score_threshold)
+        
+        # Get similar photos
+        results = searcher.search_similar_to_guid(
+            guid,
+            limit=limit,
+            score_threshold=score_threshold
+        )
+        
+        # Format results for JSON
+        formatted_results = []
+        for result in results:
+            formatted_results.append({
+                'guid': result['guid'],
+                'file_name': result['file_name'],
+                'file_path': result['file_path'],
+                'date_taken': result['date_taken'],
+                'score': result.get('score'),
+                'description': result.get('description'),
+                'location': result.get('location'),
+                'thumbnail_url': url_for('serve_photo', guid=result['guid'])
+            })
+        
+        return jsonify({
+            'results': formatted_results,
+            'count': len(formatted_results)
+        })
+    
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/delete/<guid>', methods=['POST'])
+def delete_photo(guid):
+    """Delete a photo from the index and optionally from disk.
+    
+    Expects JSON body: {"delete_file": true/false}
+    """
+    try:
+        # Parse request
+        data = request.get_json() or {}
+        delete_file = data.get('delete_file', False)
+        
+        searcher = get_searcher()
+        
+        # Get photo info
+        photo = searcher.get_photo_by_guid(guid)
+        
+        if not photo:
+            return jsonify({'error': 'Photo not found in index'}), 404
+        
+        file_path = Path(photo['file_path'])
+        file_name = photo['file_name']
+        
+        # Delete from index
+        from photo_search.utils import Utils
+        point_id = Utils.guid_to_point_id(guid)
+        
+        searcher.client.delete(
+            collection_name=searcher.collection_name,
+            points_selector=[point_id]
+        )
+        
+        # Delete file if requested
+        file_deleted = False
+        if delete_file:
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    file_deleted = True
+                except Exception as e:
+                    return jsonify({
+                        'error': f'Removed from index but failed to delete file: {e}'
+                    }), 500
+            else:
+                return jsonify({
+                    'error': 'Removed from index but file not found on disk'
+                }), 404
+        
+        # Build success message
+        if file_deleted:
+            message = f'Successfully deleted {file_name} from index and disk'
+        else:
+            message = f'Successfully removed {file_name} from index'
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'deleted_from_index': True,
+            'deleted_from_disk': file_deleted
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/facets/<field>')
 def get_facets(field):
     """Get facet values for a field."""
@@ -276,7 +404,15 @@ def main():
             from waitress import serve
             print(f"Starting production server on http://{args.host}:{args.port}")
             print("Press Ctrl+C to stop")
-            serve(app, host=args.host, port=args.port)
+            serve(
+                app, 
+                host=args.host, 
+                port=args.port,
+                threads=8,  # Increase from default 4 to handle concurrent requests
+                channel_timeout=300,  # 5 minutes for slow operations (image embedding)
+                connection_limit=100,  # Max concurrent connections
+                asyncore_use_poll=True  # Better performance on Linux
+            )
         except ImportError:
             print("Waitress not installed. Install with: pip install waitress")
             print("Falling back to Flask development server...")

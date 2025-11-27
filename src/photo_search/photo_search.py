@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-25 16:39:10
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-26 18:45:08
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
@@ -19,7 +24,7 @@ from qdrant_client.models import (
 from photo_index.embedding_generator import EmbeddingGenerator
 from photo_index.utils import Utils
 from photo_index.config import (
-    QDRANT_PATH, COLLECTION_NAME, MODEL_PATH, DEVICE
+    QDRANT_PATH, QDRANT_HOST, QDRANT_PORT, COLLECTION_NAME, MODEL_PATH, DEVICE
 )
 
 
@@ -28,7 +33,9 @@ class PhotoSearch:
     
     def __init__(
         self,
-        qdrant_path: str = QDRANT_PATH,
+        qdrant_path: Optional[str] = QDRANT_PATH,
+        qdrant_host: Optional[str] = QDRANT_HOST,
+        qdrant_port: Optional[int] = QDRANT_PORT,
         collection_name: str = COLLECTION_NAME,
         model_path: str = MODEL_PATH,
         device: str = DEVICE
@@ -36,15 +43,35 @@ class PhotoSearch:
         """Initialize the photo searcher.
         
         Args:
-            qdrant_path: Path to Qdrant storage
+            qdrant_path: Path to Qdrant local storage (if using local mode)
+            qdrant_host: Qdrant server host (if using server mode)
+            qdrant_port: Qdrant server port (if using server mode)
             collection_name: Name of the collection
             model_path: Path to vision model
             device: Device for model ("cuda" or "cpu")
         """
         self.collection_name = collection_name
         
-        # Connect to Qdrant
-        self.client = QdrantClient(path=qdrant_path)
+        # Connect to Qdrant (try server first, fall back to local)
+        if qdrant_host and qdrant_port:
+            try:
+                print(f"Attempting to connect to Qdrant server: {qdrant_host}:{qdrant_port}")
+                self.client = QdrantClient(host=qdrant_host, port=qdrant_port)
+                # Test connection
+                self.client.get_collections()
+                print(f"✓ Connected to Qdrant server")
+            except Exception as e:
+                print(f"Warning: Could not connect to Qdrant server: {e}")
+                if qdrant_path:
+                    print(f"Falling back to Qdrant local storage: {qdrant_path}")
+                    self.client = QdrantClient(path=qdrant_path)
+                else:
+                    raise ValueError("Cannot connect to server and no local path specified")
+        elif qdrant_path:
+            print(f"Connecting to Qdrant local storage: {qdrant_path}")
+            self.client = QdrantClient(path=qdrant_path)
+        else:
+            raise ValueError("Must specify either (qdrant_host and qdrant_port) or qdrant_path in config.py")
         
         # Initialize embedding generator (lazy loaded)
         self._embedding_generator = None
@@ -110,15 +137,42 @@ class PhotoSearch:
         Returns:
             List of search results with scores and payloads
         """
-        # Search in Qdrant
-        results = self.client.search(
-            collection_name=self.collection_name,
-            query_vector=embedding.tolist(),
-            query_filter=filters,
-            limit=limit,
-            score_threshold=score_threshold,
-            with_payload=True
-        )
+        # Search in Qdrant using query_points (qdrant-client 1.16.0+ local mode)
+        try:
+            # Try query_points (newer versions with local storage)
+            query_result = self.client.query_points(
+                collection_name=self.collection_name,
+                query=embedding.tolist(),
+                query_filter=filters,
+                limit=limit,
+                score_threshold=score_threshold,
+                with_payload=True
+            )
+            results = query_result.points if hasattr(query_result, 'points') else query_result
+        except AttributeError:
+            # Fallback to search (older remote API)
+            try:
+                results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=embedding.tolist(),
+                    query_filter=filters,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    with_payload=True
+                )
+            except AttributeError:
+                # Last resort - search_batch
+                from qdrant_client.models import SearchRequest
+                results = self.client.search_batch(
+                    collection_name=self.collection_name,
+                    requests=[SearchRequest(
+                        vector=embedding.tolist(),
+                        filter=filters,
+                        limit=limit,
+                        score_threshold=score_threshold,
+                        with_payload=True
+                    )]
+                )[0]
         
         return self._format_results(results)
     
@@ -149,11 +203,11 @@ class PhotoSearch:
                 'description_parsed.visual_attributes'
             ]
         
-        # Build text search filter
+        # Build text search filter using MatchText for partial matching
         text_conditions = [
             FieldCondition(
                 key=field,
-                match=MatchAny(any=[query.lower()])
+                match=MatchText(text=query.lower())
             )
             for field in search_fields
         ]
@@ -276,6 +330,54 @@ class PhotoSearch:
         """
         guid = Utils.get_photo_guid(Path(file_path))
         return self.get_photo_by_guid(guid)
+    
+    def search_similar_to_guid(
+        self,
+        guid: str,
+        limit: int = 10,
+        filters: Optional[Filter] = None,
+        score_threshold: Optional[float] = None
+    ) -> List[Dict]:
+        """Find photos similar to a photo identified by GUID.
+        
+        Args:
+            guid: GUID of the reference photo
+            limit: Number of results to return
+            filters: Optional Qdrant filters
+            score_threshold: Minimum similarity score (0-1)
+            
+        Returns:
+            List of similar photos
+        """
+        # Get the photo's point ID
+        point_id = Utils.guid_to_point_id(guid)
+        
+        # Retrieve the point with its vector
+        points = self.client.retrieve(
+            collection_name=self.collection_name,
+            ids=[point_id],
+            with_payload=False,
+            with_vectors=True
+        )
+        
+        if not points:
+            raise ValueError(f"Photo with GUID {guid} not found in collection")
+        
+        # Get the embedding vector
+        embedding = np.array(points[0].vector)
+        
+        # Search for similar photos
+        results = self.search_by_embedding(
+            embedding,
+            limit=limit + 1,  # +1 because the photo itself will be in results
+            filters=filters,
+            score_threshold=score_threshold
+        )
+        
+        # Filter out the original photo from results
+        filtered_results = [r for r in results if r['guid'] != guid]
+        
+        return filtered_results[:limit]
     
     def get_facets(
         self,

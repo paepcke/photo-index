@@ -11,6 +11,9 @@
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     
+    <!-- Autocomplete CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/autocomplete.css') }}">
+    
     <style>
         body {
             padding-top: 60px;
@@ -159,6 +162,9 @@
                 .catch(error => console.error('Error:', error));
         });
     </script>
+    
+    <!-- Autocomplete JS -->
+    <script src="{{ url_for('static', filename='js/autocomplete.js') }}"></script>
     
     {% block extra_js %}{% endblock %}
 </body>
