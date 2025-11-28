@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-27 10:04:46
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-27 11:02:56
+# @Last Modified time: 2025-11-27 21:30:14
 """Main photo indexing system."""
 
 from pathlib import Path
@@ -13,6 +13,8 @@ from datetime import datetime
 from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
+
+from logging_service import LoggingService
 
 from common.config import (
     PHOTO_DIR, QDRANT_PATH, COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT,
@@ -64,27 +66,33 @@ class PhotoIndexer:
         self.collection_name = collection_name
         self.batch_size = batch_size
         self.enable_geocoding = enable_geocoding
+
+        self.log = LoggingService()
+
+        self.description_failures = 0
+        self.description_failures_fixed = 0
+        self.description_second_chance = 0
         
         # Initialize components
-        print("Initializing indexer components...")
+        self.log.info("Initializing indexer components...")
         
         # Qdrant client (try server first, fall back to local)
         if qdrant_host and qdrant_port:
             try:
-                print(f"Attempting to connect to Qdrant server: {qdrant_host}:{qdrant_port}")
+                self.log.info(f"Attempting to connect to Qdrant server: {qdrant_host}:{qdrant_port}")
                 self.qdrant_client = QdrantClient(host=qdrant_host, port=qdrant_port)
                 # Test connection
                 self.qdrant_client.get_collections()
-                print(f"✓ Connected to Qdrant server")
+                self.log.info(f"✓ Connected to Qdrant server")
             except Exception as e:
-                print(f"Warning: Could not connect to Qdrant server: {e}")
+                self.log.warn(f"Warning: Could not connect to Qdrant server: {e}")
                 if qdrant_path:
-                    print(f"Falling back to Qdrant local storage: {qdrant_path}")
+                    self.log.info(f"Falling back to Qdrant local storage: {qdrant_path}")
                     self.qdrant_client = QdrantClient(path=qdrant_path)
                 else:
                     raise ValueError("Cannot connect to server and no local path specified")
         elif qdrant_path:
-            print(f"Connecting to Qdrant local storage: {qdrant_path}")
+            self.log.info(f"Connecting to Qdrant local storage: {qdrant_path}")
             self.qdrant_client = QdrantClient(path=qdrant_path)
         else:
             raise ValueError("Must specify either (qdrant_host and qdrant_port) or qdrant_path in config.py")
@@ -101,8 +109,8 @@ class PhotoIndexer:
             try:
                 self.geocoder = Geocoder()
             except Exception as e:
-                print(f"Warning: Could not initialize geocoder: {e}")
-                print("Continuing without geocoding functionality")
+                self.log.warn(f"Warning: Could not initialize geocoder: {e}")
+                self.log.info("Continuing without geocoding functionality")
                 self.enable_geocoding = False
         
         # Embedding generator
@@ -114,7 +122,7 @@ class PhotoIndexer:
         # Initialize collection
         self._init_collection()
         
-        print("Indexer initialized successfully")
+        self.log.info("Indexer initialized successfully")
     
     def _init_collection(self):
         """Initialize or recreate the Qdrant collection."""
@@ -123,10 +131,10 @@ class PhotoIndexer:
         collection_exists = any(c.name == self.collection_name for c in collections)
         
         if collection_exists:
-            print(f"Collection '{self.collection_name}' already exists")
+            self.log.info(f"Collection '{self.collection_name}' already exists")
             # Optionally recreate or continue
         else:
-            print(f"Creating collection '{self.collection_name}'...")
+            self.log.info(f"Creating collection '{self.collection_name}'...")
             self.qdrant_client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
@@ -134,7 +142,7 @@ class PhotoIndexer:
                     distance=Distance.COSINE
                 )
             )
-            print("Collection created")
+            self.log.info("Collection created")
     
     def find_photos(self) -> List[Path]:
         """Find all photo files in the photo directory.
@@ -142,7 +150,7 @@ class PhotoIndexer:
         Returns:
             List of paths to photo files
         """
-        print(f"Scanning {self.photo_dir} for photos...")
+        self.log.info(f"Scanning {self.photo_dir} for photos...")
         
         photo_paths = []
         for ext in IMAGE_EXTENSIONS:
@@ -151,7 +159,7 @@ class PhotoIndexer:
         # Filter out AppleDouble files
         photo_paths = [p for p in photo_paths if not p.name.startswith('._')]
         
-        print(f"Found {len(photo_paths)} photos")
+        self.log.info(f"Found {len(photo_paths)} photos")
         return sorted(photo_paths)
     
     def index_photo(self, photo_path: Path) -> Optional[Dict]:
@@ -193,11 +201,11 @@ class PhotoIndexer:
                             description_parsed = Utils.try_fix_json(description)
                             if description_parsed:
                                 self.description_failures_fixed += 1
-                                print(f"  ✓ Auto-fixed JSON for {photo_path.name}")
+                                self.log.info(f"  ✓ Auto-fixed JSON for {photo_path.name}")
                                 # Success! No retry needed
                                 break
                             else:
-                                print(f"  ✗ Could not auto-fix JSON for {photo_path.name}")
+                                self.log.info(f"  ✗ Could not auto-fix JSON for {photo_path.name}")
                                 if not retried_once:
                                     # Retry once with correction request
                                     prompt = (f'I gave you the following prompt: "{IMG_DESC_PROMPT}" for this image. '
@@ -205,14 +213,15 @@ class PhotoIndexer:
                                              'This is not proper JSON. Can you try again? '
                                              'No text other than JSON!')
                                     retried_once = True
-                                    print("  Retrying with correction request...")
+                                    self.log.info("  Retrying with correction request...")
+                                    self.description_second_chance += 1
                                     continue
                                 # We retried; give up and save bad JSON
                                 bad_json_file = Path(f"/tmp/bad_json_{photo_path.stem}.txt")
                                 bad_json_file.write_text(
                                     f"Photo: {photo_path}\n\nError: {e}\n\nJSON:\n{description}"
                                 )
-                                print(f"  Saved bad JSON to: {bad_json_file}")
+                                self.log.info(f"  Saved bad JSON to: {bad_json_file}")
                                 break
                     else:
                         # No description returned
@@ -283,7 +292,7 @@ class PhotoIndexer:
             }
             
         except Exception as e:
-            print(f"Error indexing {photo_path}: {e}")
+            self.log.err(f"Error indexing {photo_path}: {e}")
             return None
     
     def _parse_description_inline(self, description: str) -> Dict:
@@ -359,7 +368,7 @@ class PhotoIndexer:
         photo_paths = self.find_photos()
         
         if not photo_paths:
-            print("No photos found to index")
+            self.log.info("No photos found to index")
             return
         
         # Get already indexed photos if not forcing reindex
@@ -367,13 +376,13 @@ class PhotoIndexer:
         if not force_reindex:
             indexed_paths = self._get_indexed_paths()
             photo_paths = [p for p in photo_paths if str(p) not in indexed_paths]
-            print(f"Skipping {len(indexed_paths)} already indexed photos")
+            self.log.info(f"Skipping {len(indexed_paths)} already indexed photos")
         
         if not photo_paths:
-            print("All photos already indexed")
+            self.log.info("All photos already indexed")
             return
         
-        print(f"Indexing {len(photo_paths)} photos...")
+        self.log.info(f"Indexing {len(photo_paths)} photos...")
         
         # Initialize description failure counters
         self.description_failures = 0
@@ -395,9 +404,10 @@ class PhotoIndexer:
         log_msg = f"Indexing complete! Indexed {len(photo_paths)} photos"
         if GEN_IMG_DESCRIPTIONS == 1:
             log_msg += (f"\n  Malformed descriptions: {self.description_failures}"
-                       f"\n  Auto-fixed: {self.description_failures_fixed}"
-                       f"\n  Total missing: {self.description_failures - self.description_failures_fixed}")
-        print(log_msg)
+                       f"\n   Auto-fixed: {self.description_failures_fixed}"
+                       f"\n   Second chances: {self.description_second_chance}"
+                       f"\n   Total missing: {self.description_failures - self.description_failures_fixed}")
+        self.log.info(log_msg)
         self._print_stats()
     
     def _get_indexed_paths(self) -> set:
@@ -430,27 +440,27 @@ class PhotoIndexer:
             return indexed_paths
             
         except Exception as e:
-            print(f"Error getting indexed paths: {e}")
+            self.log.err(f"Error getting indexed paths: {e}")
             return set()
     
     def _print_stats(self):
         """Print indexing statistics."""
         try:
             collection_info = self.qdrant_client.get_collection(self.collection_name)
-            print(f"\nCollection stats:")
-            print(f"  Total points: {collection_info.points_count}")
-            print(f"  Vector dimension: {self.embedding_dim}")
+            self.log.info(f"\nCollection stats:")
+            self.log.info(f"  Total points: {collection_info.points_count}")
+            self.log.info(f"  Vector dimension: {self.embedding_dim}")
             
             # Print geocoding stats if enabled
             if self.geocoder:
                 geo_stats = self.geocoder.get_stats()
-                print(f"\nGeocoding stats:")
-                print(f"  Total requests: {geo_stats['total_requests']}")
-                print(f"  API calls: {geo_stats['api_calls']}")
-                print(f"  Cache hits: {geo_stats['cache_hits']}")
-                print(f"  Cache size: {geo_stats['cache_size']}")
+                self.log.info(f"\nGeocoding stats:")
+                self.log.info(f"  Total requests: {geo_stats['total_requests']}")
+                self.log.info(f"  API calls: {geo_stats['api_calls']}")
+                self.log.info(f"  Cache hits: {geo_stats['cache_hits']}")
+                self.log.info(f"  Cache size: {geo_stats['cache_size']}")
         except Exception as e:
-            print(f"Error getting stats: {e}")
+            self.log.info(f"Error getting stats: {e}")
     
     def reindex_photo(self, photo_path: Path):
         """Reindex a specific photo (update existing entry).
@@ -474,7 +484,7 @@ class PhotoIndexer:
                 points=[point]
             )
             
-            print(f"Reindexed: {photo_path.name}")
+            self.log.info(f"Reindexed: {photo_path.name}")
     
     def delete_photo(self, photo_path: Path):
         """Delete a photo from the index.
@@ -489,7 +499,7 @@ class PhotoIndexer:
             points_selector=[point_id]
         )
         
-        print(f"Deleted from index: {photo_path.name}")
+        self.log.info(f"Deleted from index: {photo_path.name}")
 
 
 def main():

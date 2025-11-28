@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-25 16:09:09
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-27 11:02:50
+# @Last Modified time: 2025-11-27 21:25:38
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
@@ -27,6 +27,7 @@ from photo_index.photo_indexer import PhotoIndexer
 from common.utils import Utils
 from common.config import PHOTO_DIR
 
+from logging_service import LoggingService
 
 def check_photo_indexed(indexer: PhotoIndexer, photo_path: Path) -> bool:
     """Check if a photo is already indexed by GUID.
