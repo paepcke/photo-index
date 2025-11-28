@@ -1,3 +1,9 @@
+<!-- 
+  @Author: Andreas Paepcke
+  @Date:   2025-11-27 11:13:55
+  @Last Modified by:   Andreas Paepcke
+  @Last Modified time: 2025-11-28 13:42:46
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,18 +21,119 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/autocomplete.css') }}">
     
     <style>
+        :root {
+            --bgGray: #737272;
+            --containerGray: #8a8988;
+            --tbGray: #9d9c9b;
+        }
+
         body {
             padding-top: 60px;
+            background-color: var(--bgGray);
+            color: white;
         }
         .navbar-brand {
             font-weight: bold;
         }
         .search-section {
-            background-color: #f8f9fa;
+            background-color: var(--bgGray);
             padding: 2rem;
             border-radius: 8px;
             margin-bottom: 2rem;
         }
+
+        /* Tab styling */
+        .nav-tabs {
+            border-bottom-color: var(--containerGray);
+        }
+        .nav-tabs .nav-link {
+            background-color: var(--containerGray);
+            color: white;
+            border-color: var(--containerGray);
+            margin-right: 0.25rem;
+        }
+        .nav-tabs .nav-link:hover {
+            border-color: var(--containerGray);
+            background-color: #6e6d6c;
+        }
+        .nav-tabs .nav-link.active {
+            background-color: var(--bgGray);
+            color: white;
+            border-color: var(--containerGray);
+            border-bottom-color: var(--bgGray);
+        }
+
+        /* Tab content */
+        .tab-content {
+            background-color: var(--containerGray);
+            padding: 1.5rem;
+            border-radius: 0 0 8px 8px;
+        }
+
+        /* Labels */
+        .form-label, .form-text, h6 {
+            color: white !important;
+        }
+
+        /* Form controls */
+        .form-control, .form-select {
+            background-color: var(--tbGray);
+            border-color: var(--containerGray);
+            color: white;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: var(--tbGray);
+            border-color: #aaa;
+            color: white;
+        }
+        .form-control::placeholder {
+            color: #ddd;
+            opacity: 0.7;
+        }
+
+        /* Filter section */
+        .filter-section {
+            background: var(--containerGray);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        /* Buttons */
+        .btn-outline-secondary {
+            color: white;
+            border-color: white;
+        }
+        .btn-outline-secondary:hover {
+            background-color: white;
+            color: var(--bgGray);
+        }
+        .btn-primary {
+            background-color: var(--containerGray);
+            border-color: var(--containerGray);
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #6e6d6c;
+            border-color: #6e6d6c;
+            color: white;
+        }
+        .btn-outline-primary {
+            background-color: var(--containerGray);
+            border-color: var(--containerGray);
+            color: white;
+        }
+        .btn-outline-primary:hover {
+            background-color: #6e6d6c;
+            border-color: #6e6d6c;
+            color: white;
+        }
+
+        /* Results title */
+        h1, h2 {
+            color: white;
+        }
+
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -52,6 +159,8 @@
         }
         .photo-card-body {
             padding: 1rem;
+            background: var(--containerGray);
+            color: white;
         }
         .photo-card-title {
             font-size: 0.9rem;
@@ -60,10 +169,11 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            color: white;
         }
         .photo-card-meta {
             font-size: 0.8rem;
-            color: #6c757d;
+            color: #e9ecef;
         }
         .score-badge {
             position: absolute;
@@ -74,12 +184,6 @@
             padding: 0.25rem 0.5rem;
             border-radius: 4px;
             font-size: 0.8rem;
-        }
-        .filter-section {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
         }
         .loading-overlay {
             display: none;
