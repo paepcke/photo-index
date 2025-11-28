@@ -3,14 +3,13 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-27 10:04:46
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-27 21:30:14
+# @Last Modified time: 2025-11-28 12:02:40
 """Main photo indexing system."""
 
 from pathlib import Path
 from typing import List, Dict, Optional
 import json
 from datetime import datetime
-from tqdm import tqdm
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
@@ -25,7 +24,7 @@ from photo_index.exif_utils import ExifExtractor
 from photo_index.embedding_generator import EmbeddingGenerator
 from photo_index.mac_metadata import MacMetadataExtractor
 from photo_index.geocoding import Geocoder
-from common.utils import Utils
+from common.utils import Utils, timed
 
 try:
     from description_parser import DescriptionParser
@@ -399,18 +398,22 @@ class PhotoIndexer:
         # Initialize description failure counters
         self.description_failures = 0
         self.description_failures_fixed = 0
+        num_photos = len(photo_paths)
         
         # Process in batches
-        for i in tqdm(range(0, len(photo_paths), self.batch_size), desc="Indexing batches"):
-            batch = photo_paths[i:i + self.batch_size]
-            points = self.index_batch(batch)
-            
-            if points:
-                # Upload to Qdrant
-                self.qdrant_client.upsert(
-                    collection_name=self.collection_name,
-                    points=points
-                )
+        with timed(f"Batches of {self.batch_size}", self.log.info) as timer:
+            for i in range(0, num_photos, self.batch_size):
+                batch = photo_paths[i:i + self.batch_size]
+                points = self.index_batch(batch)
+                # Report time and ETA after every 1 batch:
+                timer.progress(i+self.batch_size, every=1, total=num_photos)
+                
+                if points:
+                    # Upload to Qdrant
+                    self.qdrant_client.upsert(
+                        collection_name=self.collection_name,
+                        points=points
+                    )
         
         # Completion message with stats
         log_msg = f"Indexing complete! Indexed {len(photo_paths)} photos"

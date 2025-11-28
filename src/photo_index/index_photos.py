@@ -19,8 +19,9 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Set, Optional
+import time
 
 # Assuming photo_indexer package structure
 from photo_index.photo_indexer import PhotoIndexer
@@ -251,7 +252,10 @@ def index_incremental(
             print(f"  ... and {len(photo_paths) - 20} more")
         print("\nRun without --dry-run to actually index these photos.")
         return
-    
+
+    # Start timing
+    start_time = time.time()
+
     # Index photos
     print(f"\nIndexing {len(photo_paths)} photos...")
     
@@ -299,13 +303,38 @@ def index_incremental(
                 )
             except Exception as e:
                 print(f"\nError uploading batch to Qdrant: {e}")
-    
+
+    # Calculate elapsed time
+    elapsed_seconds = time.time() - start_time
+    elapsed_td = timedelta(seconds=int(elapsed_seconds))
+
+    # Format as days HH:MM:SS if needed
+    days = elapsed_td.days
+    hours, remainder = divmod(elapsed_td.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    if days > 0:
+        time_str = f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}"
+    else:
+        time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
     # Print summary
     print(f"\n{'='*70}")
     print(f"Indexing complete!")
     print(f"  ✓ Successfully indexed: {success_count}")
     if error_count > 0:
         print(f"  ✗ Errors: {error_count}")
+
+    # Add AI description stats if enabled
+    from common.config import GEN_IMG_DESCRIPTIONS
+    if GEN_IMG_DESCRIPTIONS == 1:
+        print(f"  AI Description Stats:")
+        print(f"    Malformed descriptions: {indexer.description_failures}")
+        print(f"    Auto-fixed: {indexer.description_failures_fixed}")
+        print(f"    Second chances: {indexer.description_second_chance}")
+        print(f"    Total missing: {indexer.description_failures - indexer.description_failures_fixed}")
+
+    print(f"  ⏱  Elapsed time: {time_str}")
     print(f"{'='*70}")
 
 

@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-23 08:29:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-24 09:18:08
+# @Last Modified time: 2025-11-28 11:54:36
 
 import time
 from datetime import datetime, timedelta
@@ -26,7 +26,7 @@ class BatchTimer:
         times through the loop.
     '''
 
-    def __init__(self, label: str, start_time: float, log_func: Callable[[str], None]):
+    def __init__(self, label: str, log_func: Callable[[str], None]):
         '''
         Instance provides progress information for long-running client
         processes that provide intermittent progress information. When
@@ -39,15 +39,13 @@ class BatchTimer:
 
         :param label: short text describing the client's overall operation
         :type label: str
-        :param start_time: start of the client's long running operation
-        :type start_time: float
         :param log_func: function to call for printing progress. Could be
             a logger.info() method, or the built-in print() fucntion.
         :type log_func: Callable[[str], None]
         '''
         self.label = label
-        self.start_time = start_time
-        self.batch_start_time = start_time
+        self.start_time = time.perf_counter()
+        self.batch_start_time = self.start_time
         self.log = log_func
 
     def progress(self, i: int, every: int = 50, total: int = None):

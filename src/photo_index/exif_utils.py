@@ -198,7 +198,9 @@ class ExifExtractor:
         from PIL.TiffImagePlugin import IFDRational
 
         if isinstance(value, IFDRational):
-            # Convert IFDRational to float
+            # Convert IFDRational to float, handle zero denominator
+            if value.denominator == 0:
+                return 0  # Return 0 for malformed EXIF data with zero denominator
             return float(value)
         elif isinstance(value, bytes):
             try:
