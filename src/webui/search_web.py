@@ -364,7 +364,16 @@ def update_keywords(guid):
             return jsonify({'error': 'keywords must be an array'}), 400
 
         # Sanitize keywords (strip whitespace, remove empty)
-        keywords = [k.strip() for k in keywords if k.strip()]
+        # Also split on commas for defensive handling of comma-separated input
+        sanitized = []
+        for k in keywords:
+            if isinstance(k, str):
+                # Split on comma and strip each part
+                for part in k.split(','):
+                    cleaned = part.strip()
+                    if cleaned:
+                        sanitized.append(cleaned)
+        keywords = sanitized
 
         searcher = get_searcher()
 

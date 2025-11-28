@@ -1,3 +1,9 @@
+<!-- 
+  @Author: Andreas Paepcke
+  @Date:   2025-11-28 12:03:58
+  @Last Modified by:   Andreas Paepcke
+  @Last Modified time: 2025-11-28 12:44:14
+-->
 {% extends "base.html" %}
 
 {% block title %}{{ photo.file_name }} - Photo Detail{% endblock %}
@@ -5,9 +11,9 @@
 {% block content %}
 <div class="row">
     <div class="col-12 mb-3">
-        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+        <button onclick="window.location.href='{{ url_for('index') }}'" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Back to Search
-        </a>
+        </button>
         <a href="/?similar={{ photo.guid }}" class="btn btn-primary ms-2" onclick="findSimilarFromDetail('{{ photo.guid }}', event)">
             <i class="bi bi-images"></i> Find Similar Photos
         </a>

@@ -1,3 +1,9 @@
+<!-- 
+  @Author: Andreas Paepcke
+  @Date:   2025-11-27 11:13:55
+  @Last Modified by:   Andreas Paepcke
+  @Last Modified time: 2025-11-28 12:43:43
+-->
 {% extends "base.html" %}
 
 {% block title %}Photo Search - Home{% endblock %}
@@ -180,28 +186,31 @@
 
     searchForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
+        // Save search state to sessionStorage
+        saveSearchState();
+
         // Show loading
         loadingOverlay.classList.add('active');
         resultsSection.style.display = 'none';
         noResults.style.display = 'none';
-        
+
         try {
             const formData = new FormData(searchForm);
-            
+
             const response = await fetch('/search', {
                 method: 'POST',
                 body: formData
             });
-            
+
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error || 'Search failed');
             }
-            
+
             const data = await response.json();
             displayResults(data.results);
-            
+
         } catch (error) {
             alert('Error: ' + error.message);
         } finally {
@@ -211,9 +220,12 @@
 
     // Check for findSimilar parameter on page load
     window.addEventListener('DOMContentLoaded', () => {
+        // Restore search state if available
+        restoreSearchState();
+
         const urlParams = new URLSearchParams(window.location.search);
         const findSimilarGuid = urlParams.get('findSimilar');
-        
+
         if (findSimilarGuid) {
             // Clear URL parameter
             window.history.replaceState({}, '', '/');
@@ -321,16 +333,68 @@
     function clearSearch() {
         // Reset the form
         searchForm.reset();
-        
+
         // Clear file inputs manually (reset doesn't always work for files)
         document.getElementById('queryImage').value = '';
         document.getElementById('hybridImage').value = '';
-        
+
         // Clear results
         clearResults();
-        
+
+        // Clear saved search state
+        sessionStorage.removeItem('searchState');
+
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function saveSearchState() {
+        const state = {
+            searchType: document.querySelector('input[name="search_type"]').value,
+            textQuery: document.getElementById('textQuery').value,
+            limit: document.getElementById('limit').value,
+            locationCity: document.querySelector('input[name="location_city"]').value,
+            locationState: document.querySelector('input[name="location_state"]').value,
+            locationCountry: document.querySelector('input[name="location_country"]').value,
+            dateFrom: document.querySelector('input[name="date_from"]').value,
+            dateTo: document.querySelector('input[name="date_to"]').value,
+            cameraMake: document.querySelector('input[name="camera_make"]').value,
+            cameraModel: document.querySelector('input[name="camera_model"]').value,
+            hybridText: document.getElementById('hybridText').value,
+            activeTab: document.querySelector('.nav-link.active').id
+        };
+        sessionStorage.setItem('searchState', JSON.stringify(state));
+    }
+
+    function restoreSearchState() {
+        const savedState = sessionStorage.getItem('searchState');
+        if (!savedState) return;
+
+        try {
+            const state = JSON.parse(savedState);
+
+            // Restore form values
+            if (state.textQuery) document.getElementById('textQuery').value = state.textQuery;
+            if (state.limit) document.getElementById('limit').value = state.limit;
+            if (state.locationCity) document.querySelector('input[name="location_city"]').value = state.locationCity;
+            if (state.locationState) document.querySelector('input[name="location_state"]').value = state.locationState;
+            if (state.locationCountry) document.querySelector('input[name="location_country"]').value = state.locationCountry;
+            if (state.dateFrom) document.querySelector('input[name="date_from"]').value = state.dateFrom;
+            if (state.dateTo) document.querySelector('input[name="date_to"]').value = state.dateTo;
+            if (state.cameraMake) document.querySelector('input[name="camera_make"]').value = state.cameraMake;
+            if (state.cameraModel) document.querySelector('input[name="camera_model"]').value = state.cameraModel;
+            if (state.hybridText) document.getElementById('hybridText').value = state.hybridText;
+
+            // Restore active tab
+            if (state.activeTab) {
+                const tabButton = document.getElementById(state.activeTab);
+                if (tabButton) {
+                    tabButton.click();
+                }
+            }
+        } catch (e) {
+            console.error('Failed to restore search state:', e);
+        }
     }
 
     // Initialize autocomplete on all text search fields
@@ -343,7 +407,8 @@
                     'description_parsed.objects',
                     'description_parsed.materials',
                     'description_parsed.setting',
-                    'description_parsed.visual_attributes'
+                    'description_parsed.visual_attributes',
+                    'user_keywords'
                 ],
                 minChars: 2,
                 maxResults: 15
@@ -358,7 +423,8 @@
                     'description_parsed.objects',
                     'description_parsed.materials',
                     'description_parsed.setting',
-                    'description_parsed.visual_attributes'
+                    'description_parsed.visual_attributes',
+                    'user_keywords'
                 ],
                 minChars: 2,
                 maxResults: 15

@@ -78,9 +78,9 @@ class Autocomplete {
             const allValues = new Set();
             
             for (const field of this.fields) {
-                const response = await fetch(`/facets/${encodeURIComponent(field)}?limit=1000`);
+                const response = await fetch(`/facets/${encodeURIComponent(field)}?limit=10000`);
                 if (!response.ok) continue;
-                
+
                 const data = await response.json();
                 Object.keys(data).forEach(value => allValues.add(value));
             }

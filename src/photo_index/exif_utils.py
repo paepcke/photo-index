@@ -264,7 +264,7 @@ class ExifExtractor:
             cmd = ['exiftool', '-overwrite_original', '-IPTC:Keywords=']
 
             for keyword in keywords:
-                cmd.extend(['-IPTC:Keywords+=', keyword])
+                cmd.append(f'-IPTC:Keywords+={keyword}')
 
             cmd.append(str(image_path))
 
