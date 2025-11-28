@@ -195,12 +195,14 @@ class PhotoSearch:
             List of matching photos
         """
         if search_fields is None:
-            # Default: search in description fields
+            # Default: search in description fields and keywords
             search_fields = [
                 'description_parsed.objects',
                 'description_parsed.materials',
                 'description_parsed.setting',
-                'description_parsed.visual_attributes'
+                'description_parsed.visual_attributes',
+                'ai_keywords',
+                'user_keywords'
             ]
         
         # Build text search filter using MatchText for partial matching

@@ -235,7 +235,15 @@ class PhotoIndexer:
                     'setting': [],
                     'visual_attributes': []
                 }
-            
+
+            # Extract AI-generated keywords from description
+            ai_keywords = []
+            if description_parsed:
+                ai_keywords.extend(description_parsed.get('objects', []))
+                ai_keywords.extend(description_parsed.get('materials', []))
+                ai_keywords.extend(description_parsed.get('setting', []))
+                ai_keywords.extend(description_parsed.get('visual_attributes', []))
+
             # Extract EXIF
             exif_data = self.exif_extractor.extract_exif(photo_path)
             
@@ -259,11 +267,15 @@ class PhotoIndexer:
                 'file_name': photo_path.name,
                 'file_size': photo_path.stat().st_size,
                 'indexed_at': datetime.now().isoformat(),
-                
+
                 # Description
                 'description': description,
                 'description_parsed': description_parsed,
-                
+
+                # Keywords - both AI and user
+                'ai_keywords': ai_keywords,
+                'user_keywords': exif_data.get('keywords', []),
+
                 # EXIF data
                 'exif': {
                     'camera_make': exif_data['camera_make'],
@@ -276,11 +288,11 @@ class PhotoIndexer:
                     'aperture': exif_data['aperture'],
                     'exposure_time': exif_data['exposure_time'],
                 },
-                
+
                 # GPS data
                 'gps': exif_data['gps'],
                 'location': location,
-                
+
                 # Mac metadata
                 'mac_metadata': mac_metadata,
             }

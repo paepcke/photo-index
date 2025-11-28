@@ -349,6 +349,69 @@ def delete_photo(guid):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/photo/<guid>/keywords', methods=['POST'])
+def update_keywords(guid):
+    """Update user keywords for a photo (writes to EXIF and updates index).
+
+    Expects JSON body: {"keywords": ["tag1", "tag2", ...]}
+    """
+    try:
+        # Parse request
+        data = request.get_json() or {}
+        keywords = data.get('keywords', [])
+
+        if not isinstance(keywords, list):
+            return jsonify({'error': 'keywords must be an array'}), 400
+
+        # Sanitize keywords (strip whitespace, remove empty)
+        keywords = [k.strip() for k in keywords if k.strip()]
+
+        searcher = get_searcher()
+
+        # Get photo info
+        photo = searcher.get_photo_by_guid(guid)
+
+        if not photo:
+            return jsonify({'error': 'Photo not found in index'}), 404
+
+        file_path = Path(photo['file_path'])
+
+        # Check file exists
+        if not file_path.exists():
+            return jsonify({'error': 'Photo file not found on disk'}), 404
+
+        # Write keywords to EXIF
+        from photo_index.exif_utils import ExifExtractor
+        exif_extractor = ExifExtractor()
+
+        success = exif_extractor.write_keywords(file_path, keywords)
+
+        if not success:
+            return jsonify({'error': 'Failed to write keywords to EXIF'}), 500
+
+        # Update Qdrant index
+        from common.utils import Utils
+        point_id = Utils.guid_to_point_id(guid)
+
+        # Update just the user_keywords field in the payload
+        searcher.client.set_payload(
+            collection_name=searcher.collection_name,
+            payload={"user_keywords": keywords},
+            points=[point_id]
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f'Updated keywords for {photo["file_name"]}',
+            'keywords': keywords
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/facets/<field>')
 def get_facets(field):
     """Get facet values for a field."""

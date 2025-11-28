@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import pillow_heif
+import subprocess
+import json
 
 # Register HEIF opener
 pillow_heif.register_heif_opener()
@@ -64,6 +66,7 @@ class ExifExtractor:
                     'aperture': parsed_exif.get('FNumber'),
                     'exposure_time': parsed_exif.get('ExposureTime'),
                     'gps': gps_info,
+                    'keywords': self.read_keywords(image_path),
                     'raw_exif': parsed_exif
                 }
                 
@@ -87,6 +90,7 @@ class ExifExtractor:
             'aperture': None,
             'exposure_time': None,
             'gps': {},
+            'keywords': [],
             'raw_exif': {}
         }
     
@@ -192,7 +196,7 @@ class ExifExtractor:
     def _serialize_value(self, value):
         """Convert EXIF values to JSON-serializable format."""
         from PIL.TiffImagePlugin import IFDRational
-        
+
         if isinstance(value, IFDRational):
             # Convert IFDRational to float
             return float(value)
@@ -207,4 +211,71 @@ class ExifExtractor:
             return {k: self._serialize_value(v) for k, v in value.items()}
         else:
             return value
+
+    def read_keywords(self, image_path: Path) -> list[str]:
+        """Read IPTC keywords from image using exiftool.
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            List of keyword strings
+        """
+        try:
+            result = subprocess.run(
+                ['exiftool', '-IPTC:Keywords', '-json', str(image_path)],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                if data and len(data) > 0:
+                    keywords = data[0].get('Keywords', [])
+                    # exiftool returns single keyword as string, multiple as list
+                    if isinstance(keywords, str):
+                        return [keywords] if keywords else []
+                    elif isinstance(keywords, list):
+                        return keywords
+            return []
+
+        except Exception as e:
+            print(f"Error reading keywords from {image_path}: {e}")
+            return []
+
+    def write_keywords(self, image_path: Path, keywords: list[str]) -> bool:
+        """Write IPTC keywords to image using exiftool.
+
+        Args:
+            image_path: Path to the image file
+            keywords: List of keyword strings to write
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Build exiftool command
+            # -overwrite_original: don't create _original backup files
+            # -IPTC:Keywords= : clear existing keywords first
+            # -IPTC:Keywords+= : add each keyword
+            cmd = ['exiftool', '-overwrite_original', '-IPTC:Keywords=']
+
+            for keyword in keywords:
+                cmd.extend(['-IPTC:Keywords+=', keyword])
+
+            cmd.append(str(image_path))
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            return result.returncode == 0
+
+        except Exception as e:
+            print(f"Error writing keywords to {image_path}: {e}")
+            return False
     
