@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="900" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">
+  <defs>
+    <!-- Gradient definitions -->
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a90e2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#357abd;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="greenGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5cb85c;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#449d44;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="orangeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0ad4e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ec971f;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="purpleGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#9b59b6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8e44ad;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="redGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#d9534f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c9302c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="tealGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5bc0de;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#46b8da;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Arrow marker -->
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    <marker id="arrowheadBlue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#4a90e2" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="30" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#333">
+    Photo Index System Architecture
+  </text>
+
+  <!-- ===== INDEXING FLOW (Left Side) ===== -->
+
+  <!-- Section Label -->
+  <text x="300" y="70" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#4a90e2">
+    INDEXING PIPELINE
+  </text>
+
+  <!-- Photo File -->
+  <rect x="200" y="90" width="200" height="60" rx="5" fill="url(#orangeGradient)" stroke="#333" stroke-width="2"/>
+  <text x="300" y="115" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#fff">Photo File</text>
+  <text x="300" y="135" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#fff">JPEG/HEIC/JPG</text>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="150" x2="300" y2="190" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- EXIF Extraction -->
+  <rect x="200" y="190" width="200" height="70" rx="5" fill="url(#greenGradient)" stroke="#333" stroke-width="2"/>
+  <text x="300" y="215" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">EXIF Extraction</text>
+  <text x="300" y="232" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">exiftool</text>
+  <text x="300" y="248" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff">Camera, GPS, Date, Settings</text>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="260" x2="300" y2="300" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- GPS Geocoding -->
+  <rect x="200" y="300" width="200" height="70" rx="5" fill="url(#tealGradient)" stroke="#333" stroke-width="2"/>
+  <text x="300" y="325" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">GPS Geocoding</text>
+  <text x="300" y="342" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Google Maps API</text>
+  <text x="300" y="358" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff">GPS → City, State, Country</text>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="370" x2="300" y2="410" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Llama Vision Processing -->
+  <rect x="180" y="410" width="240" height="90" rx="5" fill="url(#purpleGradient)" stroke="#333" stroke-width="2"/>
+  <text x="300" y="435" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">Llama 3.2-Vision 11B</text>
+  <text x="300" y="452" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Image Embedding (7680-dim)</text>
+  <text x="300" y="468" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">AI Description</text>
+  <text x="300" y="484" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff">Objects, Materials, Setting, Colors</text>
+
+  <!-- Arrow down split -->
+  <line x1="300" y1="500" x2="300" y2="540" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- InsightFace Processing -->
+  <rect x="200" y="540" width="200" height="70" rx="5" fill="url(#redGradient)" stroke="#333" stroke-width="2"/>
+  <text x="300" y="565" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">InsightFace buffalo_l</text>
+  <text x="300" y="582" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Face Detection</text>
+  <text x="300" y="598" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff">Face Embeddings (512-dim)</text>
+
+  <!-- Arrow down -->
+  <line x1="300" y1="610" x2="300" y2="650" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- ===== STORAGE (Bottom Center) ===== -->
+
+  <!-- Qdrant Database -->
+  <rect x="150" y="650" width="300" height="120" rx="8" fill="url(#blueGradient)" stroke="#333" stroke-width="3"/>
+  <text x="300" y="680" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#fff">Qdrant Vector Database</text>
+  <text x="300" y="702" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#fff">localhost:6333 (systemd service)</text>
+
+  <!-- Collections inside Qdrant -->
+  <rect x="165" y="715" width="130" height="45" rx="3" fill="#2c5aa0" stroke="#fff" stroke-width="1"/>
+  <text x="230" y="732" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#fff">photo_embeddings</text>
+  <text x="230" y="746" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="#fff">Images + Metadata</text>
+  <text x="230" y="756" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="#fff">7680-dim vectors</text>
+
+  <rect x="305" y="715" width="130" height="45" rx="3" fill="#2c5aa0" stroke="#fff" stroke-width="1"/>
+  <text x="370" y="732" font-family="Arial, sans-serif" font-size="10" font-weight="bold" text-anchor="middle" fill="#fff">photo_faces</text>
+  <text x="370" y="746" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="#fff">Face Embeddings</text>
+  <text x="370" y="756" font-family="Arial, sans-serif" font-size="8" text-anchor="middle" fill="#fff">512-dim vectors</text>
+
+  <!-- ===== SEARCH FLOW (Right Side) ===== -->
+
+  <!-- Section Label -->
+  <text x="850" y="70" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#5cb85c">
+    SEARCH PIPELINE
+  </text>
+
+  <!-- User Interface -->
+  <rect x="750" y="90" width="200" height="80" rx="5" fill="url(#greenGradient)" stroke="#333" stroke-width="2"/>
+  <text x="850" y="115" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">User Interface</text>
+  <text x="850" y="132" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Web UI (Flask + Waitress)</text>
+  <text x="850" y="148" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">CLI Tools</text>
+  <text x="850" y="162" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff">Port 5000</text>
+
+  <!-- Arrow down -->
+  <line x1="850" y1="170" x2="850" y2="210" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Query Input -->
+  <rect x="750" y="210" width="200" height="80" rx="5" fill="#fff" stroke="#5cb85c" stroke-width="2"/>
+  <text x="850" y="232" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#333">Query Input</text>
+  <text x="850" y="248" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#333">• Text: "sunset beach"</text>
+  <text x="850" y="263" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#333">• Image: query.jpg</text>
+  <text x="850" y="278" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#333">• Filters: date, location</text>
+
+  <!-- Arrow down -->
+  <line x1="850" y1="290" x2="850" y2="330" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Query Processing -->
+  <rect x="750" y="330" width="200" height="70" rx="5" fill="url(#purpleGradient)" stroke="#333" stroke-width="2"/>
+  <text x="850" y="355" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">Query Processing</text>
+  <text x="850" y="372" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Llama: Text/Image → Vector</text>
+  <text x="850" y="388" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Build filter conditions</text>
+
+  <!-- Arrow down -->
+  <line x1="850" y1="400" x2="850" y2="440" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Vector Search -->
+  <rect x="750" y="440" width="200" height="70" rx="5" fill="url(#blueGradient)" stroke="#333" stroke-width="2"/>
+  <text x="850" y="465" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">Vector Search</text>
+  <text x="850" y="482" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Cosine similarity</text>
+  <text x="850" y="498" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Apply metadata filters</text>
+
+  <!-- Bidirectional arrow to Qdrant -->
+  <line x1="450" y1="710" x2="750" y2="475" stroke="#4a90e2" stroke-width="3" marker-end="url(#arrowheadBlue)"/>
+  <line x1="750" y1="475" x2="450" y2="710" stroke="#4a90e2" stroke-width="3" marker-end="url(#arrowheadBlue)"/>
+
+  <!-- Arrow down from Vector Search -->
+  <line x1="850" y1="510" x2="850" y2="550" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Results Ranking -->
+  <rect x="750" y="550" width="200" height="60" rx="5" fill="#fff" stroke="#5cb85c" stroke-width="2"/>
+  <text x="850" y="572" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#333">Results Ranking</text>
+  <text x="850" y="588" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#333">Sort by score</text>
+  <text x="850" y="602" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#333">Apply limit</text>
+
+  <!-- Arrow down -->
+  <line x1="850" y1="610" x2="850" y2="650" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Display Results -->
+  <rect x="750" y="650" width="200" height="70" rx="5" fill="url(#greenGradient)" stroke="#333" stroke-width="2"/>
+  <text x="850" y="675" font-family="Arial, sans-serif" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">Display Results</text>
+  <text x="850" y="692" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">Web: Gallery view</text>
+  <text x="850" y="708" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">CLI: List with paths</text>
+
+  <!-- ===== EXTERNAL SERVICES (Top Right) ===== -->
+
+  <!-- Section Label -->
+  <text x="1050" y="70" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#666">
+    External Services
+  </text>
+
+  <!-- HuggingFace -->
+  <rect x="980" y="90" width="140" height="50" rx="5" fill="#fff" stroke="#999" stroke-width="2"/>
+  <text x="1050" y="110" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#333">HuggingFace</text>
+  <text x="1050" y="125" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">Llama Model</text>
+  <text x="1050" y="137" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">Download</text>
+
+  <!-- Google Maps -->
+  <rect x="980" y="155" width="140" height="50" rx="5" fill="#fff" stroke="#999" stroke-width="2"/>
+  <text x="1050" y="175" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#333">Google Maps</text>
+  <text x="1050" y="190" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">Geocoding API</text>
+  <text x="1050" y="202" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">GPS → Address</text>
+
+  <!-- Arrows to external services -->
+  <line x1="420" y1="335" x2="980" y2="115" stroke="#999" stroke-width="1" stroke-dasharray="5,5"/>
+  <line x1="400" y1="335" x2="980" y2="180" stroke="#999" stroke-width="1" stroke-dasharray="5,5"/>
+
+  <!-- ===== STORAGE LOCATIONS (Bottom) ===== -->
+
+  <!-- Section Label -->
+  <text x="600" y="810" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#333">
+    Data Storage Locations
+  </text>
+
+  <!-- Models Storage -->
+  <rect x="50" y="830" width="280" height="50" rx="5" fill="#e8f4f8" stroke="#5bc0de" stroke-width="2"/>
+  <text x="190" y="850" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#333">AI Models (SSD)</text>
+  <text x="190" y="865" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">/data/huggingface, /data/insightface_models</text>
+
+  <!-- Photos Storage -->
+  <rect x="350" y="830" width="280" height="50" rx="5" fill="#e8f4f8" stroke="#5bc0de" stroke-width="2"/>
+  <text x="490" y="850" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#333">Photos (Mass Storage)</text>
+  <text x="490" y="865" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">/raid/photos (100GB - 10TB+)</text>
+
+  <!-- Index Storage -->
+  <rect x="650" y="830" width="280" height="50" rx="5" fill="#e8f4f8" stroke="#5bc0de" stroke-width="2"/>
+  <text x="790" y="850" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#333">Vector Index</text>
+  <text x="790" y="865" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">/raid/qdrant_storage (~1GB per 10k photos)</text>
+
+  <!-- Application Storage -->
+  <rect x="950" y="830" width="200" height="50" rx="5" fill="#e8f4f8" stroke="#5bc0de" stroke-width="2"/>
+  <text x="1050" y="850" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#333">Application Code</text>
+  <text x="1050" y="865" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#666">~/photo-index (~50MB)</text>
+
+  <!-- Legend -->
+  <text x="50" y="25" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="start" fill="#666">
+    Legend:
+  </text>
+  <rect x="50" y="30" width="15" height="15" fill="url(#purpleGradient)" stroke="#333" stroke-width="1"/>
+  <text x="70" y="42" font-family="Arial, sans-serif" font-size="9" text-anchor="start" fill="#666">AI Models</text>
+
+  <rect x="135" y="30" width="15" height="15" fill="url(#blueGradient)" stroke="#333" stroke-width="1"/>
+  <text x="155" y="42" font-family="Arial, sans-serif" font-size="9" text-anchor="start" fill="#666">Vector DB</text>
+
+  <rect x="220" y="30" width="15" height="15" fill="url(#greenGradient)" stroke="#333" stroke-width="1"/>
+  <text x="240" y="42" font-family="Arial, sans-serif" font-size="9" text-anchor="start" fill="#666">Processing</text>
+
+  <rect x="310" y="30" width="15" height="15" fill="url(#tealGradient)" stroke="#333" stroke-width="1"/>
+  <text x="330" y="42" font-family="Arial, sans-serif" font-size="9" text-anchor="start" fill="#666">External API</text>
+</svg>

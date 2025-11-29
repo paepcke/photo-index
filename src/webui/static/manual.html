@@ -1,0 +1,718 @@
+<!-- 
+  @Author: Andreas Paepcke
+  @Date:   2025-11-28 20:21:47
+  @Last Modified by:   Andreas Paepcke
+  @Last Modified time: 2025-11-28 20:32:35
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Index System - Reference Manual</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            padding-top: 60px;
+            background-color: #f8f9fa;
+        }
+        .sidebar {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            bottom: 0;
+            width: 250px;
+            overflow-y: auto;
+            background-color: #fff;
+            border-right: 1px solid #dee2e6;
+            padding: 1rem;
+        }
+        .sidebar .nav-link {
+            color: #495057;
+            padding: 0.5rem 0;
+        }
+        .sidebar .nav-link:hover {
+            color: #007bff;
+        }
+        .sidebar .nav-link.active {
+            color: #007bff;
+            font-weight: 500;
+        }
+        .sidebar .nav-link.sub {
+            padding-left: 1rem;
+            font-size: 0.9rem;
+        }
+        .content {
+            margin-left: 270px;
+            padding: 2rem;
+            max-width: 1200px;
+        }
+        .navbar-brand {
+            font-weight: bold;
+        }
+        h1 {
+            color: #212529;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        h2 {
+            color: #495057;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 0.5rem;
+        }
+        h3 {
+            color: #6c757d;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 1rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+        .code-block code {
+            color: #e83e8c;
+        }
+        .command {
+            background-color: #212529;
+            color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+        }
+        .note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .tip {
+            background-color: #d1ecf1;
+            border-left: 4px solid #0dcaf0;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .table-section {
+            margin: 1.5rem 0;
+        }
+        section {
+            margin-bottom: 3rem;
+        }
+    </style>
+</head>
+<body data-bs-spy="scroll" data-bs-target="#toc" data-bs-offset="100">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-book"></i> Photo Index System - Reference Manual
+            </a>
+            <button class="btn btn-outline-light btn-sm" onclick="window.location.href='/'">
+                <i class="bi bi-arrow-left"></i> Back to Search
+            </button>
+        </div>
+    </nav>
+
+    <!-- Sidebar TOC -->
+    <nav id="toc" class="sidebar">
+        <ul class="nav flex-column">
+            <li class="nav-item"><a class="nav-link" href="#getting-started">Getting Started</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#start-website">Starting the Website</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#start-indexing">Starting Indexing</a></li>
+
+            <li class="nav-item"><a class="nav-link" href="#cli-tools">CLI Tools</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#indexing-tools">Indexing Tools</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#search-tools">Search Tools</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#utility-tools">Utility Tools</a></li>
+
+            <li class="nav-item"><a class="nav-link" href="#installation">Installation</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#os-components">OS-Level Components</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#python-setup">Python Setup</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#accounts">Required Accounts</a></li>
+
+            <li class="nav-item"><a class="nav-link" href="#data-locations">Data Locations</a></li>
+
+            <li class="nav-item"><a class="nav-link" href="#architecture">Architecture</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#components">Components</a></li>
+            <li class="nav-item"><a class="nav-link sub" href="#data-flow">Data Flow</a></li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="content">
+        <!-- Getting Started -->
+        <section id="getting-started">
+            <h1><i class="bi bi-rocket-takeoff"></i> Getting Started</h1>
+
+            <section id="start-website">
+                <h2>Starting the Website</h2>
+                <p>The photo search web interface is served via Flask with Waitress.</p>
+
+                <h3>Start the Web Server</h3>
+                <div class="command">$ cd /path/to/photo-index/src/webui<br>$ python search_web.py</div>
+                <p>Then open your browser to: <strong>http://localhost:5000</strong></p>
+
+                <h3>Custom Host/Port</h3>
+                <div class="command">$ python search_web.py --host 0.0.0.0 --port 8080</div>
+
+                <div class="tip">
+                    <strong><i class="bi bi-lightbulb"></i> Tip:</strong> The Qdrant server is started automatically via a systemctl service.
+                    See the <a href="#architecture">Architecture</a> section for details.
+                </div>
+            </section>
+
+            <section id="start-indexing">
+                <h2>Starting Re-Indexing</h2>
+                <p>Index your photo collection to make it searchable.</p>
+
+                <h3>Index All New Photos (Incremental)</h3>
+                <div class="command">$ cd /path/to/photo-index/src/photo_index<br>$ python index_photos.py</div>
+                <p>This indexes only photos that haven't been indexed yet.</p>
+
+                <h3>Force Re-Index Everything</h3>
+                <div class="command">$ python index_photos.py --force</div>
+
+                <h3>Index a Single Photo</h3>
+                <div class="command">$ python index_photos.py --file /raid/photos/IMG_1234.jpg</div>
+
+                <h3>Index Photos Since a Date</h3>
+                <div class="command">$ python index_photos.py --since 2024-11-01</div>
+
+                <h3>Dry Run (Preview)</h3>
+                <div class="command">$ python index_photos.py --dry-run</div>
+
+                <div class="note">
+                    <strong><i class="bi bi-info-circle"></i> Note:</strong> Indexing generates:
+                    <ul>
+                        <li>Image embeddings using Llama 3.2-Vision (7680-dim)</li>
+                        <li>AI-generated descriptions (objects, materials, setting, visual attributes)</li>
+                        <li>Face embeddings using InsightFace (512-dim)</li>
+                        <li>GPS to location geocoding</li>
+                        <li>EXIF metadata extraction</li>
+                    </ul>
+                </div>
+            </section>
+        </section>
+
+        <!-- CLI Tools -->
+        <section id="cli-tools">
+            <h1><i class="bi bi-terminal"></i> CLI Tools</h1>
+            <p>All CLI tools are located in <code>src/photo_index/cli/</code> and should be run from the project root.</p>
+
+            <section id="indexing-tools">
+                <h2>Indexing Tools</h2>
+
+                <h3>index_photos.py</h3>
+                <p>Main indexing tool for processing photos.</p>
+                <div class="code-block">
+                    <strong>Usage:</strong><br>
+                    <code>python index_photos.py [OPTIONS]</code><br><br>
+                    <strong>Options:</strong><br>
+                    <code>--force</code> - Reindex all photos<br>
+                    <code>--file PATH</code> - Index single photo<br>
+                    <code>--since YYYY-MM-DD</code> - Index photos modified since date<br>
+                    <code>--dry-run</code> - Preview without indexing<br>
+                    <code>--photo-dir PATH</code> - Custom photo directory
+                </div>
+
+                <h3>show_index.py</h3>
+                <p>View indexed data for a photo.</p>
+                <div class="command">$ src/photo_index/cli/show_index.py /raid/photos/IMG_1234.jpg</div>
+
+                <h3>delete_photo.py</h3>
+                <p>Remove a photo from the index.</p>
+                <div class="command">$ src/photo_index/cli/delete_photo.py /raid/photos/IMG_1234.jpg</div>
+                <p>Add <code>--delete-file</code> to also delete the physical file.</p>
+            </section>
+
+            <section id="search-tools">
+                <h2>Search Tools</h2>
+
+                <h3>Text Search</h3>
+                <div class="command">$ python search_cli.py --text "sunset beach"</div>
+
+                <h3>Visual Similarity Search</h3>
+                <div class="command">$ python search_cli.py --image /path/to/query.jpg</div>
+
+                <h3>Hybrid Search</h3>
+                <div class="command">$ python search_cli.py --image query.jpg --text "outdoor" \<br>    --location-city "San Francisco"</div>
+
+                <h3>Filter-Only Search</h3>
+                <div class="command">$ python search_cli.py --location-city "Anchorage" \<br>    --date-from 2024-01-01 --date-to 2024-12-31</div>
+            </section>
+
+            <section id="utility-tools">
+                <h2>Utility Tools</h2>
+
+                <h3>list_values.py</h3>
+                <p>Explore unique values in your collection.</p>
+                <div class="command"># List all cities<br>$ src/photo_index/cli/list_values.py --field location.city<br><br># List all objects<br>$ src/photo_index/cli/list_values.py --field description_parsed.objects<br><br># List all camera makes<br>$ src/photo_index/cli/list_values.py --field exif.camera_make<br><br># Show everything<br>$ src/photo_index/cli/list_values.py --all-fields</div>
+
+                <h3>get_description.py</h3>
+                <p>Generate AI description for a single photo.</p>
+                <div class="command">$ src/photo_index/cli/get_description.py /raid/photos/IMG_1234.jpg</div>
+
+                <h3>get_exif.py</h3>
+                <p>Extract EXIF metadata from a photo.</p>
+                <div class="command">$ src/photo_index/cli/get_exif.py /raid/photos/IMG_1234.jpg</div>
+            </section>
+        </section>
+
+        <!-- Installation -->
+        <section id="installation">
+            <h1><i class="bi bi-download"></i> Installation</h1>
+
+            <section id="os-components">
+                <h2>OS-Level Components</h2>
+
+                <h3>System Packages</h3>
+                <div class="command">$ sudo apt-get update<br>$ sudo apt-get install -y \<br>    python3 \<br>    python3-pip \<br>    exiftool \<br>    ffmpeg \<br>    libgl1-mesa-glx \<br>    libglib2.0-0</div>
+
+                <h3>Llama Model from HuggingFace</h3>
+                <p>Download the Llama 3.2-Vision 11B model:</p>
+                <div class="command"># Install huggingface-cli<br>$ pip install huggingface-hub<br><br># Login to HuggingFace (requires account)<br>$ huggingface-cli login<br><br># Download model to /data/huggingface<br>$ export HF_HOME=/data/huggingface<br>$ huggingface-cli download meta-llama/Llama-3.2-11B-Vision-Instruct</div>
+
+                <div class="note">
+                    <strong><i class="bi bi-info-circle"></i> Note:</strong> You need to accept the Llama license on HuggingFace before downloading.
+                    Visit <a href="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct" target="_blank">the model page</a> to accept.
+                </div>
+
+                <h3>InsightFace Models</h3>
+                <p>InsightFace models are downloaded automatically on first use to <code>~/.insightface/models/</code>.</p>
+                <p>To use custom location:</p>
+                <div class="command">$ export INSIGHTFACE_HOME=/data/insightface_models</div>
+
+                <h3>Qdrant Server</h3>
+                <p>Install Qdrant as a systemd service:</p>
+                <div class="command"># Download Qdrant<br>$ wget https://github.com/qdrant/qdrant/releases/download/v1.7.4/qdrant-x86_64-unknown-linux-gnu.tar.gz<br>$ tar xzf qdrant-x86_64-unknown-linux-gnu.tar.gz<br>$ sudo mv qdrant /usr/local/bin/<br><br># Create systemd service<br>$ sudo nano /etc/systemd/system/qdrant.service</div>
+
+                <div class="code-block">
+                    <strong>/etc/systemd/system/qdrant.service:</strong>
+                    <pre>[Unit]
+Description=Qdrant Vector Database
+After=network.target
+
+[Service]
+Type=simple
+User=your-username
+ExecStart=/usr/local/bin/qdrant --storage-path /raid/qdrant_storage/photos
+Restart=always
+
+[Install]
+WantedBy=multi-user.target</pre>
+                </div>
+
+                <div class="command"># Enable and start service<br>$ sudo systemctl daemon-reload<br>$ sudo systemctl enable qdrant<br>$ sudo systemctl start qdrant<br><br># Check status<br>$ sudo systemctl status qdrant</div>
+            </section>
+
+            <section id="python-setup">
+                <h2>Python Application Setup</h2>
+
+                <h3>Create Conda Environment</h3>
+                <div class="command">$ conda create -n photo-index python=3.10<br>$ conda activate photo-index</div>
+
+                <h3>Install Python Dependencies</h3>
+                <div class="command">$ cd /path/to/photo-index<br>$ pip install -e .</div>
+
+                <p>This installs all required packages:</p>
+                <ul>
+                    <li><strong>torch</strong> - PyTorch for deep learning</li>
+                    <li><strong>transformers</strong> - HuggingFace transformers for Llama</li>
+                    <li><strong>pillow</strong> - Image processing</li>
+                    <li><strong>insightface</strong> - Face detection and recognition</li>
+                    <li><strong>onnxruntime-gpu</strong> - ONNX runtime for InsightFace</li>
+                    <li><strong>qdrant-client</strong> - Qdrant vector database client</li>
+                    <li><strong>flask</strong> - Web framework</li>
+                    <li><strong>waitress</strong> - Production WSGI server</li>
+                    <li><strong>tqdm</strong> - Progress bars</li>
+                </ul>
+            </section>
+
+            <section id="accounts">
+                <h2>Required Accounts</h2>
+
+                <h3>Google Maps Geocoding API</h3>
+                <p>For GPS to address conversion:</p>
+                <ol>
+                    <li>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                    <li>Create a new project</li>
+                    <li>Enable "Geocoding API"</li>
+                    <li>Create credentials → API Key</li>
+                    <li>Save API key to: <code>~/.ssh/googleMapsGeoCodingAPIKey.txt</code></li>
+                </ol>
+
+                <div class="note">
+                    <strong><i class="bi bi-info-circle"></i> Note:</strong> Google provides $200/month free credit, which covers ~40,000 geocoding requests.
+                </div>
+
+                <h3>HuggingFace Account</h3>
+                <p>Required for downloading Llama models:</p>
+                <ol>
+                    <li>Create account at <a href="https://huggingface.co" target="_blank">HuggingFace</a></li>
+                    <li>Accept Llama 3.2 license on model page</li>
+                    <li>Generate access token in Settings → Access Tokens</li>
+                    <li>Login: <code>huggingface-cli login</code></li>
+                </ol>
+            </section>
+        </section>
+
+        <!-- Data Locations -->
+        <section id="data-locations">
+            <h1><i class="bi bi-hdd"></i> Data Locations</h1>
+            <p>Recommended storage layout for optimal performance:</p>
+
+            <div class="table-section">
+                <table class="table table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Data Type</th>
+                            <th>Recommended Location</th>
+                            <th>Typical Size</th>
+                            <th>Access Pattern</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>AI Models</strong><br>(Llama, InsightFace)</td>
+                            <td><code>/data/huggingface</code><br><code>/data/insightface_models</code></td>
+                            <td>~25 GB</td>
+                            <td>Fast SSD - Loaded at startup</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Photos</strong></td>
+                            <td><code>/raid/photos</code></td>
+                            <td>100 GB - 10+ TB</td>
+                            <td>Mass storage (HDD array) - Sequential reads</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Vector Index</strong><br>(Qdrant)</td>
+                            <td><code>/raid/qdrant_storage</code></td>
+                            <td>~1 GB per 10k photos</td>
+                            <td>Large storage - Random access</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Application Code</strong></td>
+                            <td><code>~/photo-index</code></td>
+                            <td>~50 MB</td>
+                            <td>Any location</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Example Configuration</h3>
+            <div class="code-block">
+                <strong>src/common/config.py:</strong>
+                <pre># Photos location
+PHOTO_DIR = "/raid/photos"
+
+# Qdrant storage
+QDRANT_PATH = "/raid/qdrant_storage/photos"
+QDRANT_HOST = "localhost"
+QDRANT_PORT = 6333
+
+# Model locations
+MODEL_CACHE_DIR = "/data/huggingface"
+MODEL_NAME = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+DEVICE = "cuda"  # or "cpu"</pre>
+            </div>
+
+            <h3>Environment Variables</h3>
+            <div class="command"># Add to ~/.bashrc or ~/.zshrc<br>export HF_HOME=/data/huggingface<br>export INSIGHTFACE_HOME=/data/insightface_models</div>
+        </section>
+
+        <!-- Architecture -->
+        <section id="architecture">
+            <h1><i class="bi bi-diagram-3"></i> Architecture Overview</h1>
+
+            <!-- Architecture Diagram -->
+            <div class="text-center my-4">
+                <img src="architecture-diagram.svg" alt="System Architecture Diagram" style="max-width: 100%; height: auto; border: 2px solid #dee2e6; border-radius: 8px; background: white; padding: 20px;">
+            </div>
+
+            <section id="components">
+                <h2>System Components</h2>
+
+                <h3>1. Llama 3.2-Vision LLM</h3>
+                <p><strong>Purpose:</strong> Image understanding and embedding generation</p>
+                <ul>
+                    <li><strong>Model:</strong> meta-llama/Llama-3.2-11B-Vision-Instruct</li>
+                    <li><strong>Embedding Dimension:</strong> 7680</li>
+                    <li><strong>Tasks:</strong>
+                        <ul>
+                            <li>Generate image embeddings for similarity search</li>
+                            <li>Generate AI descriptions (objects, materials, setting, visual attributes)</li>
+                        </ul>
+                    </li>
+                    <li><strong>Hardware:</strong> Requires GPU with 24+ GB VRAM (RTX 3090, 4090, A6000, etc.)</li>
+                </ul>
+
+                <h3>2. InsightFace</h3>
+                <p><strong>Purpose:</strong> Face detection, segmentation, and recognition</p>
+                <ul>
+                    <li><strong>Model:</strong> buffalo_l</li>
+                    <li><strong>Embedding Dimension:</strong> 512</li>
+                    <li><strong>Tasks:</strong>
+                        <ul>
+                            <li>Detect faces in photos with bounding boxes</li>
+                            <li>Generate face embeddings for similarity matching</li>
+                            <li>Enable face tagging and person search</li>
+                        </ul>
+                    </li>
+                    <li><strong>Storage:</strong> Separate <code>photo_faces</code> collection in Qdrant</li>
+                </ul>
+
+                <h3>3. Google Maps Geocoding Service</h3>
+                <p><strong>Purpose:</strong> Convert GPS coordinates to human-readable addresses</p>
+                <ul>
+                    <li><strong>Input:</strong> Latitude/longitude from EXIF GPS tags</li>
+                    <li><strong>Output:</strong> City, state, country, postal code, formatted address</li>
+                    <li><strong>Caching:</strong> Results cached to minimize API calls</li>
+                    <li><strong>Rate Limiting:</strong> Respects API quotas with exponential backoff</li>
+                </ul>
+
+                <h3>4. EXIF Metadata Extraction</h3>
+                <p><strong>Purpose:</strong> Extract camera and photo metadata</p>
+                <ul>
+                    <li><strong>Tool:</strong> exiftool (Perl-based)</li>
+                    <li><strong>Extracted Data:</strong>
+                        <ul>
+                            <li>Camera make/model</li>
+                            <li>Date/time taken</li>
+                            <li>GPS coordinates</li>
+                            <li>Camera settings (ISO, aperture, shutter speed, focal length)</li>
+                            <li>Image dimensions</li>
+                            <li>User keywords (IPTC)</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h3>5. Qdrant Vector Database</h3>
+                <p><strong>Purpose:</strong> Store and search image/face embeddings and metadata</p>
+                <ul>
+                    <li><strong>Collections:</strong>
+                        <ul>
+                            <li><code>photo_embeddings</code> - Image vectors (7680-dim) + metadata</li>
+                            <li><code>photo_faces</code> - Face vectors (512-dim) + person tags</li>
+                        </ul>
+                    </li>
+                    <li><strong>Deployment:</strong> systemd service on localhost:6333</li>
+                    <li><strong>Storage:</strong> File-based persistence in <code>/raid/qdrant_storage/</code></li>
+                    <li><strong>Search:</strong> Cosine similarity for vector search</li>
+                </ul>
+
+                <h3>6. Flask + Waitress Web Framework</h3>
+                <p><strong>Purpose:</strong> Serve web UI and API endpoints</p>
+                <ul>
+                    <li><strong>Framework:</strong> Flask (development) + Waitress (production)</li>
+                    <li><strong>Features:</strong>
+                        <ul>
+                            <li>Search interface (text, image, hybrid)</li>
+                            <li>Photo detail view</li>
+                            <li>Browse values</li>
+                            <li>Face tagging</li>
+                            <li>RESTful API for all operations</li>
+                        </ul>
+                    </li>
+                    <li><strong>Port:</strong> 5000 (default)</li>
+                </ul>
+            </section>
+
+            <section id="data-flow">
+                <h2>How Components Work Together</h2>
+
+                <h3>Indexing Flow</h3>
+                <div class="code-block">
+                    <pre>1. Photo File (JPEG/HEIC)
+   ↓
+2. EXIF Extraction → Camera info, GPS, date
+   ↓
+3. GPS Geocoding → City, state, country
+   ↓
+4. Llama Vision Processing
+   ├─→ Image Embedding (7680-dim vector)
+   └─→ AI Description (objects, materials, setting, colors)
+   ↓
+5. InsightFace Processing → Detect faces, generate embeddings (512-dim)
+   ↓
+6. Qdrant Storage
+   ├─→ photo_embeddings: Vector + all metadata
+   └─→ photo_faces: Face vectors + photo GUID reference</pre>
+                </div>
+
+                <h3>Search Flow</h3>
+                <div class="code-block">
+                    <pre>1. User Query (web UI or CLI)
+   ├─→ Text query: "sunset beach"
+   ├─→ Image upload: query.jpg
+   └─→ Filters: location, date, camera
+   ↓
+2. Query Processing
+   ├─→ Text → Llama embedding
+   ├─→ Image → Llama embedding
+   └─→ Filters → Qdrant filter conditions
+   ↓
+3. Qdrant Vector Search
+   ├─→ Cosine similarity on embeddings
+   └─→ Apply metadata filters
+   ↓
+4. Results Ranking
+   ├─→ Sort by similarity score
+   └─→ Apply result limit
+   ↓
+5. Display Results
+   ├─→ Web: Gallery view with thumbnails
+   └─→ CLI: List with file paths and scores</pre>
+                </div>
+
+                <h3>Face Recognition Flow</h3>
+                <div class="code-block">
+                    <pre>1. Photo Detail Page
+   ↓
+2. Load Face Data from photo_faces collection
+   ↓
+3. Display Faces
+   ├─→ Show bounding boxes
+   ├─→ Display person names (if tagged)
+   └─→ Show confidence scores
+   ↓
+4. User Tags Face → "John Doe"
+   ↓
+5. Update photo_faces record
+   ↓
+6. Search by Person
+   ├─→ Query: person_name = "John Doe"
+   └─→ Return all photos with that person</pre>
+                </div>
+
+                <h3>System Startup Sequence</h3>
+                <ol>
+                    <li><strong>Qdrant Server</strong> - Started by systemd (automatic on boot)</li>
+                    <li><strong>Web Application</strong> - Manual start: <code>python search_web.py</code>
+                        <ul>
+                            <li>Connects to Qdrant (localhost:6333)</li>
+                            <li>Lazy-loads Llama model on first search</li>
+                            <li>Lazy-loads InsightFace on first face operation</li>
+                        </ul>
+                    </li>
+                    <li><strong>Indexer</strong> - Manual start: <code>python index_photos.py</code>
+                        <ul>
+                            <li>Loads Llama model into GPU memory (~20 GB VRAM)</li>
+                            <li>Loads InsightFace model (~500 MB VRAM)</li>
+                            <li>Scans photo directory</li>
+                            <li>Processes photos in batches</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <h3>Technology Stack Summary</h3>
+                <div class="table-section">
+                    <table class="table table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Layer</th>
+                                <th>Technology</th>
+                                <th>Purpose</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>AI/ML</td>
+                                <td>Llama 3.2-Vision, InsightFace</td>
+                                <td>Image understanding, embeddings, face detection</td>
+                            </tr>
+                            <tr>
+                                <td>Vector DB</td>
+                                <td>Qdrant</td>
+                                <td>Store and search embeddings + metadata</td>
+                            </tr>
+                            <tr>
+                                <td>Web Backend</td>
+                                <td>Flask + Waitress</td>
+                                <td>REST API and web UI serving</td>
+                            </tr>
+                            <tr>
+                                <td>Web Frontend</td>
+                                <td>Bootstrap 5, Vanilla JS</td>
+                                <td>Responsive UI with autocomplete</td>
+                            </tr>
+                            <tr>
+                                <td>External APIs</td>
+                                <td>Google Maps Geocoding</td>
+                                <td>GPS → Address conversion</td>
+                            </tr>
+                            <tr>
+                                <td>Metadata</td>
+                                <td>exiftool</td>
+                                <td>EXIF/IPTC extraction</td>
+                            </tr>
+                            <tr>
+                                <td>Runtime</td>
+                                <td>Python 3.10, PyTorch, CUDA</td>
+                                <td>Execution environment</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
+
+        <!-- Footer -->
+        <footer class="mt-5 pt-5 border-top text-center text-muted">
+            <p>Photo Index System - Built with Llama 3.2-Vision, InsightFace, and Qdrant</p>
+            <p class="small">Last Updated: November 2025</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Update active nav link on scroll
+        const observerOptions = {
+            root: null,
+            rootMargin: '-100px 0px -80% 0px',
+            threshold: 0
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const id = entry.target.getAttribute('id');
+                    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                        link.classList.remove('active');
+                    });
+                    const activeLink = document.querySelector(`.sidebar .nav-link[href="#${id}"]`);
+                    if (activeLink) {
+                        activeLink.classList.add('active');
+                    }
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('section[id]').forEach(section => {
+            observer.observe(section);
+        });
+    </script>
+</body>
+</html>

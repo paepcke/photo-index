@@ -5,6 +5,11 @@
 # @Last Modified time: 2025-11-27 11:05:31
 """Image embedding generation using Llama 3.2-Vision model."""
 
+import os
+
+# Set HuggingFace cache directory before importing transformers
+os.environ['HF_HOME'] = '/data/huggingface'
+
 import torch
 from transformers import MllamaForConditionalGeneration, AutoProcessor, GenerationConfig
 from PIL import Image

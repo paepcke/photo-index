@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-28 12:26:10
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-28 18:36:04
+# -*- coding: utf-8 -*-
 """
 Flask web UI for photo search.
 
@@ -16,6 +21,7 @@ from werkzeug.utils import secure_filename
 import tempfile
 
 from photo_search.photo_search import PhotoSearch, FilterBuilder
+from photo_index.face_search import FaceSearcher
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -24,6 +30,7 @@ app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
 
 # Initialize searcher (lazy loaded)
 _searcher = None
+_face_searcher = None
 
 def get_searcher():
     """Get or create searcher instance."""
@@ -31,6 +38,14 @@ def get_searcher():
     if _searcher is None:
         _searcher = PhotoSearch()
     return _searcher
+
+def get_face_searcher():
+    """Get or create face searcher instance."""
+    global _face_searcher
+    if _face_searcher is None:
+        searcher = get_searcher()
+        _face_searcher = FaceSearcher(searcher.client)
+    return _face_searcher
 
 
 @app.route('/')
@@ -442,10 +457,101 @@ def get_stats():
     try:
         searcher = get_searcher()
         stats = searcher.get_stats()
-        
+
         return jsonify(stats)
-    
+
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/photo/<guid>/faces')
+def get_photo_faces(guid):
+    """Get all detected faces for a photo.
+
+    Returns face metadata including bounding boxes and person names.
+    """
+    try:
+        face_searcher = get_face_searcher()
+        faces = face_searcher.get_faces_for_photo(guid)
+
+        return jsonify({
+            'faces': faces,
+            'count': len(faces)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/photo/<guid>/faces/<int:face_index>/tag', methods=['POST'])
+def tag_face(guid, face_index):
+    """Tag a detected face with a person's name.
+
+    Expects JSON body: {"person_name": "John Doe"}
+    """
+    try:
+        # Parse request
+        data = request.get_json() or {}
+        person_name = data.get('person_name', '').strip()
+
+        if not person_name:
+            return jsonify({'error': 'person_name is required'}), 400
+
+        face_searcher = get_face_searcher()
+        success = face_searcher.tag_face(guid, face_index, person_name)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Tagged face as {person_name}'
+            })
+        else:
+            return jsonify({'error': 'Failed to tag face'}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/faces/person/<person_name>')
+def get_faces_by_person(person_name):
+    """Get all faces tagged with a specific person name."""
+    try:
+        face_searcher = get_face_searcher()
+        limit = int(request.args.get('limit', 100))
+
+        faces = face_searcher.search_by_person_name(person_name, limit=limit)
+
+        return jsonify({
+            'person_name': person_name,
+            'faces': faces,
+            'count': len(faces)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/faces/persons')
+def get_all_persons():
+    """Get list of all person names that have been tagged."""
+    try:
+        face_searcher = get_face_searcher()
+        persons = face_searcher.get_all_person_names()
+
+        return jsonify({
+            'persons': persons,
+            'count': len(persons)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 

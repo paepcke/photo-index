@@ -20,7 +20,7 @@ import json
 from qdrant_client import QdrantClient
 
 from common.utils import Utils
-from common.config import QDRANT_PATH, COLLECTION_NAME
+from common.config import QDRANT_PATH, QDRANT_HOST, QDRANT_PORT, COLLECTION_NAME
 
 
 def format_payload(payload, indent=0):
@@ -77,9 +77,19 @@ def main():
     # Generate GUID for the photo
     photo_guid = Utils.get_photo_guid(photo_path)
     point_id = Utils.guid_to_point_id(photo_guid)
-    
-    # Connect to Qdrant
-    client = QdrantClient(path=args.qdrant_path)
+
+    # Connect to Qdrant (try server first, fall back to local)
+    # This matches the logic in PhotoIndexer
+    if QDRANT_HOST and QDRANT_PORT:
+        try:
+            client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            # Test connection
+            client.get_collections()
+        except Exception:
+            # Fall back to local storage
+            client = QdrantClient(path=args.qdrant_path)
+    else:
+        client = QdrantClient(path=args.qdrant_path)
     
     # Retrieve the point
     try:

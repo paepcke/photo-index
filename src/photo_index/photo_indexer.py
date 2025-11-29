@@ -24,6 +24,7 @@ from photo_index.exif_utils import ExifExtractor
 from photo_index.embedding_generator import EmbeddingGenerator
 from photo_index.mac_metadata import MacMetadataExtractor
 from photo_index.geocoding import Geocoder
+from photo_index.face_detector import FaceDetector
 from common.utils import Utils, timed
 
 try:
@@ -46,10 +47,11 @@ class PhotoIndexer:
         model_name: str = MODEL_NAME,
         device: str = DEVICE,
         batch_size: int = BATCH_SIZE,
-        enable_geocoding: bool = True
+        enable_geocoding: bool = True,
+        enable_face_detection: bool = True
     ):
         """Initialize the photo indexer.
-        
+
         Args:
             photo_dir: Directory containing photos to index
             qdrant_path: Path for Qdrant local storage (if using local mode)
@@ -60,11 +62,14 @@ class PhotoIndexer:
             device: Device to run model on
             batch_size: Batch size for processing
             enable_geocoding: Whether to enable GPS to location conversion
+            enable_face_detection: Whether to enable face detection
         """
         self.photo_dir = Path(photo_dir)
         self.collection_name = collection_name
+        self.faces_collection_name = 'photo_faces'
         self.batch_size = batch_size
         self.enable_geocoding = enable_geocoding
+        self.enable_face_detection = enable_face_detection
 
         self.log = LoggingService()
 
@@ -111,7 +116,17 @@ class PhotoIndexer:
                 self.log.warn(f"Warning: Could not initialize geocoder: {e}")
                 self.log.info("Continuing without geocoding functionality")
                 self.enable_geocoding = False
-        
+
+        # Face detector (only if enabled)
+        self.face_detector = None
+        if self.enable_face_detection:
+            try:
+                self.face_detector = FaceDetector()
+            except Exception as e:
+                self.log.warn(f"Warning: Could not initialize face detector: {e}")
+                self.log.info("Continuing without face detection functionality")
+                self.enable_face_detection = False
+
         # Embedding generator
         self.embedding_generator = EmbeddingGenerator(model_name, device)
         
@@ -124,14 +139,15 @@ class PhotoIndexer:
         self.log.info("Indexer initialized successfully")
     
     def _init_collection(self):
-        """Initialize or recreate the Qdrant collection."""
-        # Check if collection exists
+        """Initialize or recreate the Qdrant collections (photos and faces)."""
+        # Check if collections exist
         collections = self.qdrant_client.get_collections().collections
         collection_exists = any(c.name == self.collection_name for c in collections)
-        
+        faces_collection_exists = any(c.name == self.faces_collection_name for c in collections)
+
+        # Create photos collection if needed
         if collection_exists:
             self.log.info(f"Collection '{self.collection_name}' already exists")
-            # Optionally recreate or continue
         else:
             self.log.info(f"Creating collection '{self.collection_name}'...")
             self.qdrant_client.create_collection(
@@ -142,6 +158,21 @@ class PhotoIndexer:
                 )
             )
             self.log.info("Collection created")
+
+        # Create faces collection if needed
+        if self.enable_face_detection:
+            if faces_collection_exists:
+                self.log.info(f"Collection '{self.faces_collection_name}' already exists")
+            else:
+                self.log.info(f"Creating collection '{self.faces_collection_name}'...")
+                self.qdrant_client.create_collection(
+                    collection_name=self.faces_collection_name,
+                    vectors_config=VectorParams(
+                        size=512,  # InsightFace buffalo_l produces 512-dim embeddings
+                        distance=Distance.COSINE
+                    )
+                )
+                self.log.info("Faces collection created")
     
     def find_photos(self) -> List[Path]:
         """Find all photo files in the photo directory.
@@ -258,7 +289,14 @@ class PhotoIndexer:
                         gps['latitude'],
                         gps['longitude']
                     )
-            
+
+            # Detect faces if enabled
+            detected_faces = []
+            face_count = 0
+            if self.enable_face_detection and self.face_detector:
+                detected_faces = self.face_detector.detect_faces(photo_path)
+                face_count = len(detected_faces)
+
             # Build payload
             payload = {
                 'guid': guid,
@@ -294,12 +332,16 @@ class PhotoIndexer:
 
                 # Mac metadata
                 'mac_metadata': mac_metadata,
+
+                # Face detection
+                'face_count': face_count,
             }
-            
+
             return {
                 'path': photo_path,
                 'embedding': embedding,
-                'payload': payload
+                'payload': payload,
+                'detected_faces': detected_faces
             }
             
         except Exception as e:
@@ -340,34 +382,57 @@ class PhotoIndexer:
             'visual_attributes': []
         }
     
-    def index_batch(self, photo_paths: List[Path]) -> List[PointStruct]:
+    def index_batch(self, photo_paths: List[Path]) -> tuple[List[PointStruct], List[PointStruct]]:
         """Index a batch of photos.
-        
+
         Args:
             photo_paths: List of photo paths to index
-            
+
         Returns:
-            List of Qdrant points
+            Tuple of (photo_points, face_points) for Qdrant
         """
-        points = []
-        
+        photo_points = []
+        face_points = []
+
         for i, photo_path in enumerate(photo_paths):
             result = self.index_photo(photo_path)
-            
+
             if result:
-                # Create Qdrant point using GUID
+                # Create Qdrant point for photo using GUID
                 guid = result['payload']['guid']
                 point_id = Utils.guid_to_point_id(guid)
-                
-                point = PointStruct(
+
+                photo_point = PointStruct(
                     id=point_id,
                     vector=result['embedding'].tolist(),
                     payload=result['payload']
                 )
-                
-                points.append(point)
-        
-        return points
+
+                photo_points.append(photo_point)
+
+                # Create face points if faces were detected
+                if result.get('detected_faces'):
+                    for face in result['detected_faces']:
+                        # Generate unique ID for this face (combine photo GUID and face index)
+                        face_id = Utils.guid_to_point_id(f"{guid}_face_{face.face_index}")
+
+                        face_point = PointStruct(
+                            id=face_id,
+                            vector=face.embedding.tolist(),
+                            payload={
+                                'photo_guid': guid,
+                                'photo_path': str(photo_path),
+                                'photo_filename': photo_path.name,
+                                'face_index': face.face_index,
+                                'bbox': face.bbox,
+                                'confidence': face.confidence,
+                                'person_name': None,  # To be tagged by user later
+                            }
+                        )
+
+                        face_points.append(face_point)
+
+        return photo_points, face_points
     
     def index_all(self, force_reindex: bool = False):
         """Index all photos in the photo directory.
@@ -404,15 +469,22 @@ class PhotoIndexer:
         with timed(f"Batches of {self.batch_size}", self.log.info) as timer:
             for i in range(0, num_photos, self.batch_size):
                 batch = photo_paths[i:i + self.batch_size]
-                points = self.index_batch(batch)
+                photo_points, face_points = self.index_batch(batch)
                 # Report time and ETA after every 1 batch:
                 timer.progress(i+self.batch_size, every=1, total=num_photos)
-                
-                if points:
-                    # Upload to Qdrant
+
+                if photo_points:
+                    # Upload photos to Qdrant
                     self.qdrant_client.upsert(
                         collection_name=self.collection_name,
-                        points=points
+                        points=photo_points
+                    )
+
+                if face_points and self.enable_face_detection:
+                    # Upload faces to Qdrant
+                    self.qdrant_client.upsert(
+                        collection_name=self.faces_collection_name,
+                        points=face_points
                     )
         
         # Completion message with stats
@@ -463,9 +535,19 @@ class PhotoIndexer:
         try:
             collection_info = self.qdrant_client.get_collection(self.collection_name)
             self.log.info(f"\nCollection stats:")
-            self.log.info(f"  Total points: {collection_info.points_count}")
+            self.log.info(f"  Total photos: {collection_info.points_count}")
             self.log.info(f"  Vector dimension: {self.embedding_dim}")
-            
+
+            # Print face detection stats if enabled
+            if self.enable_face_detection:
+                try:
+                    faces_info = self.qdrant_client.get_collection(self.faces_collection_name)
+                    self.log.info(f"\nFace detection stats:")
+                    self.log.info(f"  Total faces detected: {faces_info.points_count}")
+                    self.log.info(f"  Face embedding dimension: 512")
+                except Exception as e:
+                    self.log.warn(f"  Could not get face stats: {e}")
+
             # Print geocoding stats if enabled
             if self.geocoder:
                 geo_stats = self.geocoder.get_stats()

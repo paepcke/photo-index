@@ -1,10 +1,9 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Author: Andreas Paepcke
 # @Date:   2025-11-25 16:09:09
 # @Last Modified by:   Andreas Paepcke
 # @Last Modified time: 2025-11-27 21:25:38
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Enhanced photo indexer with incremental indexing support.
 
@@ -155,34 +154,66 @@ def index_single_file(
         return True
     
     print(f"Indexing: {file_path.name}")
-    
+
     try:
         # Index the photo
         result = indexer.index_photo(file_path)
-        
+
         if result:
-            # Create and upload point
+            # Create and upload photo point
             from qdrant_client.models import PointStruct
-            
-            point_id = Utils.guid_to_point_id(result['payload']['guid'])
-            
-            point = PointStruct(
+
+            guid = result['payload']['guid']
+            point_id = Utils.guid_to_point_id(guid)
+
+            photo_point = PointStruct(
                 id=point_id,
                 vector=result['embedding'].tolist(),
                 payload=result['payload']
             )
-            
+
             indexer.qdrant_client.upsert(
                 collection_name=indexer.collection_name,
-                points=[point]
+                points=[photo_point]
             )
-            
+
+            # Create and upload face points if faces were detected
+            if result.get('detected_faces') and indexer.enable_face_detection:
+                face_points = []
+                for face in result['detected_faces']:
+                    # Generate unique ID for this face (combine photo GUID and face index)
+                    face_id = Utils.guid_to_point_id(f"{guid}_face_{face.face_index}")
+
+                    face_point = PointStruct(
+                        id=face_id,
+                        vector=face.embedding.tolist(),
+                        payload={
+                            'photo_guid': guid,
+                            'photo_path': str(file_path),
+                            'photo_filename': file_path.name,
+                            'face_index': face.face_index,
+                            'bbox': face.bbox,
+                            'confidence': face.confidence,
+                            'person_name': None,  # To be tagged by user later
+                        }
+                    )
+
+                    face_points.append(face_point)
+
+                # Upload face points to the faces collection
+                if face_points:
+                    indexer.qdrant_client.upsert(
+                        collection_name='photo_faces',
+                        points=face_points
+                    )
+                    print(f"  → Detected and indexed {len(face_points)} face(s)")
+
             print(f"✓ Successfully indexed: {file_path.name}")
             return True
         else:
             print(f"✗ Failed to index: {file_path.name}")
             return False
-            
+
     except Exception as e:
         print(f"✗ Error indexing {file_path.name}: {e}")
         import traceback

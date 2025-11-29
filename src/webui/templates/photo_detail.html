@@ -126,6 +126,25 @@
         </div>
         {% endif %}
 
+        <!-- Faces -->
+        {% if photo.face_count and photo.face_count > 0 %}
+        <div class="card mb-3">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-person-circle"></i> Detected Faces ({{ photo.face_count }})
+            </div>
+            <div class="card-body">
+                <div id="facesContainer">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span class="ms-2">Loading faces...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Keywords -->
         <div class="card mb-3">
             <div class="card-header bg-warning text-dark">
@@ -268,10 +287,129 @@
 <script>
 const photoGuid = '{{ photo.guid }}';
 const photoFileName = '{{ photo.file_name }}';
+const hasFaces = {{ 'true' if photo.face_count and photo.face_count > 0 else 'false' }};
 
 function showDeleteModal() {
     const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
     modal.show();
+}
+
+// Load faces on page load
+if (hasFaces) {
+    document.addEventListener('DOMContentLoaded', loadFaces);
+}
+
+async function loadFaces() {
+    try {
+        const response = await fetch(`/photo/${photoGuid}/faces`);
+        if (!response.ok) throw new Error('Failed to load faces');
+
+        const data = await response.json();
+        displayFaces(data.faces);
+    } catch (error) {
+        document.getElementById('facesContainer').innerHTML =
+            '<div class="alert alert-danger">Error loading faces</div>';
+    }
+}
+
+function displayFaces(faces) {
+    const container = document.getElementById('facesContainer');
+
+    if (faces.length === 0) {
+        container.innerHTML = '<p class="text-muted">No faces detected</p>';
+        return;
+    }
+
+    let html = '';
+    faces.forEach((face, index) => {
+        const personName = face.person_name || 'Unknown';
+        const isTagged = face.person_name !== null;
+
+        html += `
+            <div class="face-item mb-3 pb-3 ${index < faces.length - 1 ? 'border-bottom' : ''}">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <strong>Face ${face.face_index + 1}</strong>
+                    <small class="text-muted">${(face.confidence * 100).toFixed(1)}% confidence</small>
+                </div>
+
+                <div class="mb-2">
+                    <strong>Person:</strong>
+                    <span id="personName_${face.face_index}" class="${isTagged ? 'text-success' : 'text-muted'}">
+                        ${personName}
+                    </span>
+                </div>
+
+                <div class="input-group input-group-sm">
+                    <input type="text"
+                           class="form-control"
+                           id="nameInput_${face.face_index}"
+                           placeholder="Enter person name"
+                           value="${face.person_name || ''}">
+                    <button class="btn btn-primary"
+                            onclick="tagFace(${face.face_index})">
+                        <i class="bi bi-tag"></i> Tag
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+async function tagFace(faceIndex) {
+    const nameInput = document.getElementById(`nameInput_${faceIndex}`);
+    const personName = nameInput.value.trim();
+
+    if (!personName) {
+        alert('Please enter a person name');
+        return;
+    }
+
+    // Show loading
+    const loadingMsg = document.createElement('div');
+    loadingMsg.className = 'alert alert-info position-fixed top-0 start-50 translate-middle-x mt-3';
+    loadingMsg.style.zIndex = '9999';
+    loadingMsg.innerHTML = '<i class="bi bi-hourglass-split"></i> Tagging face...';
+    document.body.appendChild(loadingMsg);
+
+    try {
+        const response = await fetch(`/photo/${photoGuid}/faces/${faceIndex}/tag`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                person_name: personName
+            })
+        });
+
+        const data = await response.json();
+
+        loadingMsg.remove();
+
+        if (response.ok) {
+            // Update display
+            const personNameSpan = document.getElementById(`personName_${faceIndex}`);
+            personNameSpan.textContent = personName;
+            personNameSpan.className = 'text-success';
+
+            // Show success message
+            const successMsg = document.createElement('div');
+            successMsg.className = 'alert alert-success position-fixed top-0 start-50 translate-middle-x mt-3';
+            successMsg.style.zIndex = '9999';
+            successMsg.innerHTML = `<i class="bi bi-check-circle"></i> Tagged as ${personName}`;
+            document.body.appendChild(successMsg);
+
+            setTimeout(() => successMsg.remove(), 2000);
+        } else {
+            alert(`Error: ${data.error || 'Failed to tag face'}`);
+        }
+
+    } catch (error) {
+        loadingMsg.remove();
+        alert(`Error: ${error.message}`);
+    }
 }
 
 async function confirmDelete() {
