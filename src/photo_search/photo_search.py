@@ -184,13 +184,16 @@ class PhotoSearch:
         search_fields: Optional[List[str]] = None
     ) -> List[Dict]:
         """Search photos by text in descriptions.
-        
+
+        Prioritizes person_names matches over description matches to avoid
+        partial matches like "eli" in "helicopter".
+
         Args:
             query: Text query
             limit: Number of results to return
             filters: Optional Qdrant filters
             search_fields: Fields to search in (default: description fields)
-            
+
         Returns:
             List of matching photos
         """
@@ -206,12 +209,41 @@ class PhotoSearch:
                 'person_names'
             ]
 
-        # Build text search filter
-        # Use MatchText for string fields and MatchAny for list fields (person_names)
+        # Two-phase search: prioritize person_names to avoid partial text matches
+        # Phase 1: Search only in person_names if it's in the search fields
+        person_results = []
+        if 'person_names' in search_fields:
+            person_filter = Filter(
+                should=[
+                    FieldCondition(
+                        key='person_names',
+                        match=MatchAny(any=[query.lower()])
+                    )
+                ]
+            )
+
+            # Combine with any existing filters
+            if filters:
+                person_filter.must = filters.must if filters.must else []
+
+            person_results, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=person_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False
+            )
+
+        # Phase 2: If we have enough person_names results, return those
+        # Otherwise, search in all fields
+        if len(person_results) >= limit:
+            return self._format_results(person_results, include_score=False)
+
+        # Build text search filter for remaining fields
         text_conditions = []
         for field in search_fields:
             if field == 'person_names':
-                # person_names is a list field, use MatchAny
+                # Already searched, add to get any additional matches
                 text_conditions.append(
                     FieldCondition(
                         key=field,
@@ -226,7 +258,7 @@ class PhotoSearch:
                         match=MatchText(text=query.lower())
                     )
                 )
-        
+
         # Combine with any existing filters
         if filters:
             combined_filter = Filter(
@@ -235,17 +267,37 @@ class PhotoSearch:
             )
         else:
             combined_filter = Filter(should=text_conditions)
-        
+
         # Scroll through all matching results
-        results, _ = self.client.scroll(
+        all_results, _ = self.client.scroll(
             collection_name=self.collection_name,
             scroll_filter=combined_filter,
             limit=limit,
             with_payload=True,
             with_vectors=False
         )
-        
-        return self._format_results(results, include_score=False)
+
+        # Deduplicate and prioritize: person_names matches first, then others
+        seen_guids = set()
+        final_results = []
+
+        # Add person_names matches first
+        for result in person_results:
+            guid = result.payload.get('guid')
+            if guid not in seen_guids:
+                seen_guids.add(guid)
+                final_results.append(result)
+
+        # Add remaining matches
+        for result in all_results:
+            guid = result.payload.get('guid')
+            if guid not in seen_guids:
+                seen_guids.add(guid)
+                final_results.append(result)
+                if len(final_results) >= limit:
+                    break
+
+        return self._format_results(final_results[:limit], include_score=False)
     
     def search_hybrid(
         self,
