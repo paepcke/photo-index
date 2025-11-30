@@ -195,24 +195,37 @@ class PhotoSearch:
             List of matching photos
         """
         if search_fields is None:
-            # Default: search in description fields and keywords
+            # Default: search in description fields, keywords, and person names
             search_fields = [
                 'description_parsed.objects',
                 'description_parsed.materials',
                 'description_parsed.setting',
                 'description_parsed.visual_attributes',
                 'ai_keywords',
-                'user_keywords'
+                'user_keywords',
+                'person_names'
             ]
-        
-        # Build text search filter using MatchText for partial matching
-        text_conditions = [
-            FieldCondition(
-                key=field,
-                match=MatchText(text=query.lower())
-            )
-            for field in search_fields
-        ]
+
+        # Build text search filter
+        # Use MatchText for string fields and MatchAny for list fields (person_names)
+        text_conditions = []
+        for field in search_fields:
+            if field == 'person_names':
+                # person_names is a list field, use MatchAny
+                text_conditions.append(
+                    FieldCondition(
+                        key=field,
+                        match=MatchAny(any=[query.lower()])
+                    )
+                )
+            else:
+                # Other fields are strings, use MatchText
+                text_conditions.append(
+                    FieldCondition(
+                        key=field,
+                        match=MatchText(text=query.lower())
+                    )
+                )
         
         # Combine with any existing filters
         if filters:

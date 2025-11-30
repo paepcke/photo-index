@@ -255,19 +255,29 @@ def index_incremental(
     if not force:
         print("Checking which photos are already indexed...")
         indexed_guids = get_indexed_guids(indexer)
-        print(f"  → {len(indexed_guids)} photos already in index")
-        
+
         # Filter out already indexed
         to_index = []
+        already_indexed_count = 0
         for photo in photo_paths:
             try:
                 guid = Utils.get_photo_guid(photo)
                 if guid not in indexed_guids:
                     to_index.append(photo)
+                else:
+                    already_indexed_count += 1
             except Exception as e:
                 print(f"Warning: Could not check {photo.name}: {e}")
                 to_index.append(photo)  # Include it to be safe
-        
+
+        print(f"  → {already_indexed_count} of {len(photo_paths)} found photos already indexed")
+
+        # Check for orphaned entries in index (photos that no longer exist on disk)
+        total_in_index = len(indexed_guids)
+        if total_in_index > already_indexed_count:
+            orphaned = total_in_index - already_indexed_count
+            print(f"  → {orphaned} indexed photo(s) no longer found on disk")
+
         photo_paths = to_index
         print(f"  → {len(photo_paths)} new photos to index")
     

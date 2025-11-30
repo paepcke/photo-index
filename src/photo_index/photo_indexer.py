@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-27 10:04:46
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-28 12:02:40
+# @Last Modified time: 2025-11-29 14:34:05
 """Main photo indexing system."""
 
 from pathlib import Path
@@ -183,9 +183,17 @@ class PhotoIndexer:
         self.log.info(f"Scanning {self.photo_dir} for photos...")
         
         photo_paths = []
-        for ext in IMAGE_EXTENSIONS:
-            photo_paths.extend(self.photo_dir.rglob(f"*{ext}"))
-        
+        # rglob('*') walks the tree exactly once
+        for file_path in self.photo_dir.rglob("*"):
+            # Filter out hidden files OR directories
+            # This checks if any part of the path (folder or filename) starts with '.'
+            if any(part.startswith('.') for part in file_path.parts):
+                continue
+
+            # Is file a photo?
+            if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
+                photo_paths.append(file_path)            
+
         # Filter out AppleDouble files
         photo_paths = [p for p in photo_paths if not p.name.startswith('._')]
         

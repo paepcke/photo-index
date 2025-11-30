@@ -67,10 +67,15 @@
     <!-- Photo Display -->
     <div class="col-lg-8 mb-4">
         <div class="card">
-            <img src="{{ url_for('serve_photo', guid=photo.guid) }}" 
-                 class="card-img-top" 
-                 alt="{{ photo.file_name }}"
-                 style="max-height: 70vh; object-fit: contain; background: #000;">
+            <div id="photoContainer" style="position: relative; background: #000;">
+                <img id="photoImage"
+                     src="{{ url_for('serve_photo', guid=photo.guid) }}"
+                     class="card-img-top"
+                     alt="{{ photo.file_name }}"
+                     style="max-height: 70vh; object-fit: contain; width: 100%; display: block;">
+                <canvas id="faceOverlay"
+                        style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+            </div>
             <div class="card-body">
                 <h5 class="card-title">{{ photo.file_name }}</h5>
                 <p class="text-muted">{{ photo.file_path }}</p>
@@ -289,6 +294,12 @@ const photoGuid = '{{ photo.guid }}';
 const photoFileName = '{{ photo.file_name }}';
 const hasFaces = {{ 'true' if photo.face_count and photo.face_count > 0 else 'false' }};
 
+// Store face data globally
+let allFaces = [];
+let canvas = null;
+let ctx = null;
+let photoImage = null;
+
 function showDeleteModal() {
     const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
     modal.show();
@@ -296,7 +307,33 @@ function showDeleteModal() {
 
 // Load faces on page load
 if (hasFaces) {
-    document.addEventListener('DOMContentLoaded', loadFaces);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadFaces();
+        initializeCanvas();
+    });
+}
+
+function initializeCanvas() {
+    canvas = document.getElementById('faceOverlay');
+    ctx = canvas.getContext('2d');
+    photoImage = document.getElementById('photoImage');
+
+    // Resize canvas to match image when it loads
+    photoImage.addEventListener('load', resizeCanvas);
+    window.addEventListener('resize', resizeCanvas);
+
+    // Initial resize
+    if (photoImage.complete) {
+        resizeCanvas();
+    }
+}
+
+function resizeCanvas() {
+    if (!canvas || !photoImage) return;
+
+    // Set canvas size to match the displayed image size
+    canvas.width = photoImage.offsetWidth;
+    canvas.height = photoImage.offsetHeight;
 }
 
 async function loadFaces() {
@@ -305,6 +342,7 @@ async function loadFaces() {
         if (!response.ok) throw new Error('Failed to load faces');
 
         const data = await response.json();
+        allFaces = data.faces;  // Store globally
         displayFaces(data.faces);
     } catch (error) {
         document.getElementById('facesContainer').innerHTML =
@@ -341,8 +379,9 @@ function displayFaces(faces) {
 
                 <div class="input-group input-group-sm">
                     <input type="text"
-                           class="form-control"
+                           class="form-control face-name-input"
                            id="nameInput_${face.face_index}"
+                           data-face-index="${face.face_index}"
                            placeholder="Enter person name"
                            value="${face.person_name || ''}">
                     <button class="btn btn-primary"
@@ -355,6 +394,99 @@ function displayFaces(faces) {
     });
 
     container.innerHTML = html;
+
+    // Add focus/blur event handlers to all name inputs
+    document.querySelectorAll('.face-name-input').forEach(input => {
+        input.addEventListener('focus', function() {
+            const faceIndex = parseInt(this.dataset.faceIndex);
+            showFaceBoundingBox(faceIndex);
+        });
+
+        input.addEventListener('blur', function() {
+            clearBoundingBox();
+        });
+    });
+}
+
+function showFaceBoundingBox(faceIndex) {
+    if (!ctx || !canvas || !photoImage) return;
+
+    // Find the face by index
+    const face = allFaces.find(f => f.face_index === faceIndex);
+    if (!face || !face.bbox) return;
+
+    // Clear any existing box
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Get image natural and displayed dimensions
+    const naturalWidth = photoImage.naturalWidth;
+    const naturalHeight = photoImage.naturalHeight;
+    const containerWidth = photoImage.offsetWidth;
+    const containerHeight = photoImage.offsetHeight;
+
+    // Calculate the actual displayed image dimensions and offset
+    // (accounting for object-fit: contain letterboxing)
+    const imageRatio = naturalWidth / naturalHeight;
+    const containerRatio = containerWidth / containerHeight;
+
+    let displayWidth, displayHeight, offsetX, offsetY;
+
+    if (containerRatio > imageRatio) {
+        // Container is wider - image has letterboxing on left/right
+        displayHeight = containerHeight;
+        displayWidth = naturalWidth * (containerHeight / naturalHeight);
+        offsetX = (containerWidth - displayWidth) / 2;
+        offsetY = 0;
+    } else {
+        // Container is taller - image has letterboxing on top/bottom
+        displayWidth = containerWidth;
+        displayHeight = naturalHeight * (containerWidth / naturalWidth);
+        offsetX = 0;
+        offsetY = (containerHeight - displayHeight) / 2;
+    }
+
+    // Calculate scale factors
+    const scaleX = displayWidth / naturalWidth;
+    const scaleY = displayHeight / naturalHeight;
+
+    // bbox format: [x1, y1, x2, y2] - top-left and bottom-right corners
+    const [x1, y1, x2, y2] = face.bbox;
+
+    // Convert to x, y, width, height
+    const x = x1;
+    const y = y1;
+    const width = x2 - x1;
+    const height = y2 - y1;
+
+    // Scale to displayed image size and add offset
+    const scaledX = (x * scaleX) + offsetX;
+    const scaledY = (y * scaleY) + offsetY;
+    const scaledWidth = width * scaleX;
+    const scaledHeight = height * scaleY;
+
+    // Draw bounding box
+    ctx.strokeStyle = '#00ff00';  // Green color
+    ctx.lineWidth = 3;
+    ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+    // Add label with face number
+    ctx.fillStyle = '#00ff00';
+    ctx.font = 'bold 16px Arial';
+    const label = `Face ${faceIndex + 1}`;
+    const labelWidth = ctx.measureText(label).width;
+
+    // Draw label background
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+    ctx.fillRect(scaledX, scaledY - 25, labelWidth + 10, 20);
+
+    // Draw label text
+    ctx.fillStyle = '#000';
+    ctx.fillText(label, scaledX + 5, scaledY - 10);
+}
+
+function clearBoundingBox() {
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 async function tagFace(faceIndex) {

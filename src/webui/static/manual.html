@@ -231,6 +231,23 @@
                 <p>Remove a photo from the index.</p>
                 <div class="command">$ src/photo_index/cli/delete_photo.py /raid/photos/IMG_1234.jpg</div>
                 <p>Add <code>--delete-file</code> to also delete the physical file.</p>
+
+                <h3>cleanup_index.py</h3>
+                <p>Remove orphaned entries from the index (photos that no longer exist on disk).</p>
+                <div class="code-block">
+                    <strong>Usage:</strong><br>
+                    <code>python src/photo_index/cli/cleanup_index.py [OPTIONS]</code><br><br>
+                    <strong>Options:</strong><br>
+                    <code>--dry-run</code> - Show what would be deleted without actually deleting<br>
+                    <code>--skip-faces</code> - Keep orphaned face entries (by default, they are removed)<br>
+                    <code>--collection NAME</code> - Custom collection name
+                </div>
+                <div class="command"># Preview what would be deleted<br>$ src/photo_index/cli/cleanup_index.py --dry-run<br><br># Actually remove orphaned entries (includes faces)<br>$ src/photo_index/cli/cleanup_index.py</div>
+
+                <div class="note">
+                    <strong><i class="bi bi-info-circle"></i> Note:</strong> This tool is only needed when photos are deleted manually on disk outside the system.
+                    When you delete photos through the web UI, the index is kept clean automatically.
+                </div>
             </section>
 
             <section id="search-tools">

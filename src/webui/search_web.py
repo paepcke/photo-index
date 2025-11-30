@@ -103,25 +103,28 @@ def search():
         combined_filter = FilterBuilder.combine_filters(*filters) if filters else None
         
         # Execute search based on type
-        if search_type == 'image' and 'query_image' in request.files:
+        if search_type == 'image':
             # Image similarity search
-            file = request.files['query_image']
-            if file.filename:
-                filename = secure_filename(file.filename)
-                filepath = Path(app.config['UPLOAD_FOLDER']) / filename
-                file.save(filepath)
-                
-                results = searcher.search_by_image(
-                    filepath,
-                    limit=limit,
-                    filters=combined_filter,
-                    score_threshold=score_threshold
-                )
-                
-                # Clean up uploaded file
-                filepath.unlink()
-            else:
+            if 'query_image' not in request.files:
                 return jsonify({'error': 'No image file provided'}), 400
+
+            file = request.files['query_image']
+            if not file.filename:
+                return jsonify({'error': 'No image file selected'}), 400
+
+            filename = secure_filename(file.filename)
+            filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            file.save(filepath)
+
+            results = searcher.search_by_image(
+                filepath,
+                limit=limit,
+                filters=combined_filter,
+                score_threshold=score_threshold
+            )
+
+            # Clean up uploaded file
+            filepath.unlink()
         
         elif search_type == 'hybrid' and 'query_image' in request.files:
             # Hybrid search
@@ -248,6 +251,133 @@ def serve_photo(guid):
         return f"Error: {e}", 500
 
 
+@app.route('/view', methods=['POST'])
+def view_photos():
+    """View photos by uploading them and looking up their metadata in the index."""
+    try:
+        searcher = get_searcher()
+
+        # Get uploaded files
+        if 'photos' not in request.files:
+            return jsonify({'error': 'No photos provided'}), 400
+
+        files = request.files.getlist('photos')
+        if not files or len(files) == 0:
+            return jsonify({'error': 'No photos selected'}), 400
+
+        results = []
+
+        for file in files:
+            if not file.filename:
+                continue
+
+            # Save temporarily to compute hash
+            filename = secure_filename(file.filename)
+            filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+            file.save(filepath)
+
+            try:
+                # Try to find photo by file path match first (faster)
+                # This will work if the user selected a photo from the indexed directory
+                from common.utils import Utils
+
+                # Search for photo by filename
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
+                search_filter = Filter(
+                    must=[
+                        FieldCondition(
+                            key="file_name",
+                            match=MatchValue(value=filename)
+                        )
+                    ]
+                )
+
+                matches, _ = searcher.client.scroll(
+                    collection_name=searcher.collection_name,
+                    scroll_filter=search_filter,
+                    limit=10,
+                    with_payload=True,
+                    with_vectors=False
+                )
+
+                # If we found matches, use the first one
+                # (there might be multiple files with same name in different dirs)
+                if matches:
+                    for match in matches:
+                        # Format the result using the same structure as search results
+                        photo_data = {
+                            'guid': match.payload.get('guid'),
+                            'file_path': match.payload.get('file_path'),
+                            'file_name': match.payload.get('file_name'),
+                            'date_taken': match.payload.get('exif', {}).get('date_taken'),
+                            'description': match.payload.get('description_parsed'),
+                            'location': match.payload.get('location'),
+                            'thumbnail_url': url_for('serve_photo', guid=match.payload.get('guid'))
+                        }
+                        results.append(photo_data)
+                        break  # Just take the first match for this filename
+                else:
+                    # Photo not in index - still display it but with limited metadata
+                    from PIL import Image
+                    import hashlib
+
+                    # Generate a temporary GUID based on filename
+                    temp_guid = hashlib.md5(filename.encode()).hexdigest()
+
+                    # Try to get basic image info
+                    try:
+                        img = Image.open(filepath)
+                        width, height = img.size
+                        img.close()
+                    except:
+                        width, height = None, None
+
+                    # Return basic info without full metadata
+                    results.append({
+                        'guid': temp_guid,
+                        'file_name': filename,
+                        'file_path': str(filepath),
+                        'date_taken': None,
+                        'description': {'objects': ['Not in index']},
+                        'location': None,
+                        'thumbnail_url': f'/serve_temp/{filename}',
+                        'in_index': False
+                    })
+            finally:
+                # Only clean up if photo was found in index
+                # Keep temp files for photos not in index so we can serve them
+                if results and results[-1].get('in_index', True):
+                    filepath.unlink()
+
+        if not results:
+            return jsonify({'error': 'No photos found'}), 404
+
+        return jsonify({
+            'results': results,
+            'count': len(results)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/serve_temp/<filename>')
+def serve_temp_photo(filename):
+    """Serve a temporary uploaded photo file."""
+    try:
+        filepath = Path(app.config['UPLOAD_FOLDER']) / secure_filename(filename)
+
+        if not filepath.exists():
+            return "Photo not found", 404
+
+        return send_file(filepath, mimetype='image/jpeg')
+
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
 @app.route('/browse')
 def browse_values():
     """Browse collection values page."""
@@ -320,15 +450,39 @@ def delete_photo(guid):
         file_path = Path(photo['file_path'])
         file_name = photo['file_name']
         
-        # Delete from index
+        # Delete from photo index
         from common.utils import Utils
         point_id = Utils.guid_to_point_id(guid)
-        
+
         searcher.client.delete(
             collection_name=searcher.collection_name,
             points_selector=[point_id]
         )
-        
+
+        # Delete associated face entries
+        faces_deleted = 0
+        try:
+            face_searcher = get_face_searcher()
+            faces = face_searcher.get_faces_for_photo(guid)
+
+            if faces:
+                # Delete all face points for this photo
+                face_point_ids = []
+                for face in faces:
+                    face_id = Utils.guid_to_point_id(f"{guid}_face_{face['face_index']}")
+                    face_point_ids.append(face_id)
+
+                if face_point_ids:
+                    from qdrant_client.models import PointIdsList
+                    searcher.client.delete(
+                        collection_name='photo_faces',
+                        points_selector=PointIdsList(points=face_point_ids)
+                    )
+                    faces_deleted = len(face_point_ids)
+        except Exception as e:
+            # Don't fail the entire deletion if face cleanup fails
+            print(f"Warning: Could not delete face entries: {e}")
+
         # Delete file if requested
         file_deleted = False
         if delete_file:
@@ -350,12 +504,16 @@ def delete_photo(guid):
             message = f'Successfully deleted {file_name} from index and disk'
         else:
             message = f'Successfully removed {file_name} from index'
-        
+
+        if faces_deleted > 0:
+            message += f' ({faces_deleted} face entr{"y" if faces_deleted == 1 else "ies"} also removed)'
+
         return jsonify({
             'success': True,
             'message': message,
             'deleted_from_index': True,
-            'deleted_from_disk': file_deleted
+            'deleted_from_disk': file_deleted,
+            'faces_deleted': faces_deleted
         })
         
     except Exception as e:

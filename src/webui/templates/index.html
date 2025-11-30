@@ -39,6 +39,11 @@
                             <i class="bi bi-plus-circle"></i> Hybrid Search
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="view-tab" data-bs-toggle="tab" data-bs-target="#view-photos" type="button">
+                            <i class="bi bi-eye"></i> View Photos
+                        </button>
+                    </li>
                 </ul>
 
                 <!-- Tab Content -->
@@ -78,13 +83,23 @@
                         </div>
                         <div class="mb-3">
                             <label for="hybridText" class="form-label">Text Query (optional):</label>
-                            <input type="text" class="form-control" id="hybridText" name="text_query" 
+                            <input type="text" class="form-control" id="hybridText" name="text_query"
                                    placeholder="e.g., outdoor, sunset...">
                         </div>
                         <div class="mb-3">
                             <label for="hybridThreshold" class="form-label">Minimum Similarity (optional):</label>
-                            <input type="number" class="form-control" id="hybridThreshold" name="score_threshold" 
+                            <input type="number" class="form-control" id="hybridThreshold" name="score_threshold"
                                    min="0" max="1" step="0.1" placeholder="0.0 - 1.0">
+                        </div>
+                    </div>
+
+                    <!-- View Photos -->
+                    <div class="tab-pane fade" id="view-photos">
+                        <input type="hidden" name="search_type" value="view">
+                        <div class="mb-3">
+                            <label for="viewPhotos" class="form-label">Select photos to view:</label>
+                            <input type="file" class="form-control" id="viewPhotos" name="view_photos" accept="image/*" multiple>
+                            <div class="form-text">Browse and select one or more photos from your file system to display them</div>
                         </div>
                     </div>
                 </div>
@@ -186,6 +201,52 @@
 
     searchForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        // Get search type from the active tab
+        const activeTabPane = document.querySelector('.tab-pane.active');
+        const searchType = activeTabPane.querySelector('input[name="search_type"]').value;
+
+        // Handle "View Photos" tab specially - display selected files directly
+        if (searchType === 'view') {
+            const fileInput = document.getElementById('viewPhotos');
+            const files = fileInput.files;
+
+            if (files.length === 0) {
+                alert('Please select one or more photos to view');
+                return;
+            }
+
+            // Show loading
+            loadingOverlay.classList.add('active');
+            resultsSection.style.display = 'none';
+            noResults.style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('photos', files[i]);
+                }
+
+                const response = await fetch('/view', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to view photos');
+                }
+
+                const data = await response.json();
+                displayResults(data.results);
+
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                loadingOverlay.classList.remove('active');
+            }
+            return;
+        }
 
         // Save search state to sessionStorage
         saveSearchState();
@@ -337,6 +398,7 @@
         // Clear file inputs manually (reset doesn't always work for files)
         document.getElementById('queryImage').value = '';
         document.getElementById('hybridImage').value = '';
+        document.getElementById('viewPhotos').value = '';
 
         // Clear results
         clearResults();
@@ -349,8 +411,9 @@
     }
 
     function saveSearchState() {
+        const activeTabPane = document.querySelector('.tab-pane.active');
         const state = {
-            searchType: document.querySelector('input[name="search_type"]').value,
+            searchType: activeTabPane.querySelector('input[name="search_type"]').value,
             textQuery: document.getElementById('textQuery').value,
             limit: document.getElementById('limit').value,
             locationCity: document.querySelector('input[name="location_city"]').value,

@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# @Author: Andreas Paepcke
+# @Date:   2025-11-28 15:09:25
+# @Last Modified by:   Andreas Paepcke
+# @Last Modified time: 2025-11-29 12:31:03
 """Face search functionality for finding similar faces."""
 
 from pathlib import Path
@@ -151,18 +155,51 @@ class FaceSearcher:
             # Find the face point by combining photo GUID and face index
             face_id = Utils.guid_to_point_id(f"{photo_guid}_face_{face_index}")
 
-            # Update the payload
+            # Update the face payload
             self.qdrant_client.set_payload(
                 collection_name=self.faces_collection_name,
                 payload={'person_name': person_name},
                 points=[face_id]
             )
 
+            # Also update the photo's payload with all person names for text search
+            self._update_photo_person_names(photo_guid)
+
             return True
 
         except Exception as e:
             self.log.err(f"Error tagging face: {e}")
             return False
+
+    def _update_photo_person_names(self, photo_guid: str):
+        """Update the photo's payload with list of all tagged person names.
+
+        Args:
+            photo_guid: GUID of the photo
+        """
+        try:
+            from common.utils import Utils
+
+            # Get all faces for this photo
+            faces = self.get_faces_for_photo(photo_guid)
+
+            # Collect unique person names (excluding None)
+            # Store in lowercase for case-insensitive search
+            person_names = set()
+            for face in faces:
+                if face['person_name']:
+                    person_names.add(face['person_name'].lower())
+
+            # Update the photo's payload in photo_embeddings collection
+            photo_point_id = Utils.guid_to_point_id(photo_guid)
+            self.qdrant_client.set_payload(
+                collection_name='photo_embeddings',
+                payload={'person_names': list(person_names)},
+                points=[photo_point_id]
+            )
+
+        except Exception as e:
+            self.log.err(f"Error updating photo person names: {e}")
 
     def get_faces_for_photo(
         self,
