@@ -3,13 +3,16 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 10:06:48
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-30 10:21:42
+# @Last Modified time: 2025-11-30 11:40:21
 
 import argparse
-import subprocess
 import sys
 import json
 from pathlib import Path
+from scenedetect import open_video, SceneManager
+from scenedetect.detectors import ContentDetector
+from scenedetect.scene_manager import save_images
+import cv2
 
 from logging_service import LoggingService
 
@@ -150,32 +153,68 @@ class MovieSceneExporter:
         return False
 
     def process_video(self, file_path):
-        if self.should_skip(file_path):
-            return
+            if self.should_skip(file_path):
+                return
 
-        # Determine output folder
-        folder_name = f"{file_path.stem}_scenes"
-        target_dir = (self.out_dir / folder_name) if self.out_dir else (file_path.parent / folder_name)
-        target_dir.mkdir(parents=True, exist_ok=True)
+            # Determine output folder
+            folder_name = f"{file_path.stem}_scenes"
+            target_dir = (self.out_dir / folder_name) if self.out_dir else (file_path.parent / folder_name)
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-        self.log.info(f"Processing: {file_path.name}")
+            self.log.info(f"Processing: {file_path.name}")
 
-        filename_format = f"{self.prefix}$VIDEO_NAME-Scene-$SCENE_NUMBER-$IMAGE_NUMBER"
+            try:
+                # API: Open Video
+                video = open_video(str(file_path))
+                
+                # API: Setup Manager & Detector
+                scene_manager = SceneManager()
+                scene_manager.add_detector(ContentDetector(threshold=self.threshold))
+                
+                # API: Detect
+                scene_manager.detect_scenes(video, show_progress=True)
+                scene_list = scene_manager.get_scene_list()
+                
+                # --- CASE 1: Scenes Found ---
+                if scene_list:
+                    self.log.info(f"  Found {len(scene_list)} scenes. Saving images...")
+                    name_template = f"{self.prefix}$VIDEO_NAME-Scene-$SCENE_NUMBER-$IMAGE_NUMBER"
+                    
+                    save_images(
+                        scene_list=scene_list,
+                        video=video,
+                        output_dir=str(target_dir),
+                        image_name_template=name_template,
+                        image_extension=self.DEFAULT_IMAGE_FORMAT
+                    )
 
-        cmd = [
-            'scenedetect',
-            '-i', str(file_path),
-            'detect-content', '--threshold', str(self.threshold),
-            'save-images', 
-            '--output', str(target_dir), 
-            '--format', self.DEFAULT_IMAGE_FORMAT,
-            '--filename-format', filename_format
-        ]
+                # --- CASE 2: No Scenes Found (Fallback) ---
+                else:
+                    self.log.info("  No scene changes detected. Extracting middle frame as fallback...")
+                    
+                    # Handle duration types (int vs FrameTimecode)
+                    if hasattr(video.duration, 'get_frames'):
+                        total_frames = video.duration.get_frames()
+                    else:
+                        total_frames = int(video.duration)
 
-        try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
-        except subprocess.CalledProcessError:
-            self.log.err(f"Failed to process {file_path.name}")
+                    mid_frame = total_frames // 2
+                    
+                    # Seek and Read using the open video object
+                    video.seek(mid_frame)
+                    frame_im = video.read()
+                    
+                    if frame_im is not None:
+                        out_name = f"{self.prefix}{file_path.stem}_midframe.{self.DEFAULT_IMAGE_FORMAT}"
+                        out_path = target_dir / out_name
+                        
+                        cv2.imwrite(str(out_path), frame_im)
+                        self.log.info(f"  Saved fallback image: {out_name}")
+                    else:
+                        self.log.err("  Could not read middle frame.")
+
+            except Exception as e:
+                self.log.err(f"Failed to process {file_path.name}: {e}")
 
     def run_extraction(self):
         videos = self.find_videos()
@@ -230,8 +269,16 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
+
+    #*************
+    sys.argv.append('/home/paepcke/tmp/movies')
+    #*************
     args = parse_arguments()
-    
+
+    if not Path.exists(Path(args.root)):
+        print(f"Search root directory {args.root} does not exist; aborting")
+        sys.exit(1)
+        
     exporter = MovieSceneExporter(
         root_dir=args.root,
         out_dir=args.outdir,

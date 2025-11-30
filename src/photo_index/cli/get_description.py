@@ -14,7 +14,7 @@ from pathlib import Path
 import json
 
 from photo_index.embedding_generator import EmbeddingGenerator
-from photo_index.config import MODEL_PATH, DEVICE, IMG_DESC_PROMPT
+from common.config import MODEL_PATH, DEVICE, IMG_DESC_PROMPT
 
 
 def main():
