@@ -2,34 +2,43 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-30 18:10:05
+# @Last Modified time: 2025-12-01 15:00:20
 
 import numpy as np
 import pandas as pd
-from scipy.signal import convolve, find_peaks
+from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter
+import cv2
+
+from logging_service import LoggingService
+
+from common.video_utils import VideoStream, VideoUtils
 
 class SceneChangeDetector:
     """
     Detects significant scene changes in a time-series of 'content_val' 
     by applying Gaussian smoothing and filtering peaks based on prominence.
     Usage:
-      detector = SceneChangeDetector(scene_cur_values)
-      detector.detect_scenes()
-      
+      detector = SceneChangeDetector(scene_cur_values, vid_path)
+      scenes = detector.detect_scenes()
+      detector.frames() # to get the frame images for saving.
+                        # Frames are ordered to correspond to
+                        # the rows in the returned scenes df.
     """
 
     def __init__(
             self,
             time_series: {pd.DataFrame | str},
+            vid_path: str,
             sigma: int = 3, 
             min_prominence: float = 3.0, 
             min_height: float = 4.0,
-            change_magnitude_col: str = 'content_val'):
+            change_magnitude_col: str = 'content_val') -> pd.DataFrame:
         """
         Initializes the detector with key parameters.
 
         :param time_series: either path to a .csv file, or a Pandas dataframe
+        :param vid_path: path to the video for lifting frames.
         :param sigma: The standard deviation (spread) of the Gaussian filter. 
                          Higher sigma means more smoothing.
         :param min_prominence: Minimum required prominence for a peak 
@@ -39,12 +48,15 @@ class SceneChangeDetector:
         :data_col: column in .csv file or dataframe that holds the frame change
                          quantification data.
         """
+        self.vid_path = vid_path
         self.sigma = sigma
         self.min_prominence = min_prominence
         self.min_height = min_height
         self.smoothed_data = None
         self.scene_change_indices = None
         self.change_magnitude_col = change_magnitude_col
+
+        self.log = LoggingService()
 
         if type(time_series) == str:
             try:
@@ -99,17 +111,58 @@ class SceneChangeDetector:
         
         self.scene_change_indices = indices
         
-        # 3. Compile Results
-        results = self.time_series.iloc[indices].copy()
+        # 3. Collect the rows that are scene changes:
+        scenes = self.time_series.iloc[indices].copy()
         
         # Add the detected prominence and the smoothed value for context
-        results['prominence'] = properties['prominences']
-        results['smoothed_val'] = self.smoothed_data[indices]
+        scenes['prominence'] = properties['prominences']
+        scenes['smoothed_val'] = self.smoothed_data[indices]
+
+        uniq_scenes = self.deduplicate(scenes, self.vid_path)
+        return uniq_scenes
+
+    def deduplicate(self, scenes: pd.DataFrame, video_path: str) -> pd.DataFrame:
         
-        return results
+        final_indices = []
+        kept_histograms = []
+        self.scene_frame_data = []
+        
+        # Open video to grab frames at specific indices
+        with VideoStream(video_path) as cap:
+
+            # Iterate through the peaks found by scipy
+            ret: bool
+            frame: np.ndarray
+            for idx, scene_row in scenes.iterrows():
+                # Jump to the frame index
+                frame_num = scene_row['frame_num']
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                ret, frame = cap.read()
+                
+                if not ret:
+                    # Frame was identifies as a series, but
+                    # could not be retrieved:
+                    raise IOError((f"Frame {idx} in movie {video_path} identified as " 
+                                   f"keyframe, but not readable from file"))
+
+                # Calculate fingerprint
+                current_hist = VideoUtils.get_frame_fingerprint(frame)
+                
+                # Check against ALREADY accepted scenes
+                # Note: We check against *kept_histograms*, not just the previous one.
+                if not self._is_duplicate(current_hist, kept_histograms, threshold=0.9):
+                    final_indices.append(idx)
+                    kept_histograms.append(current_hist)
+                    # Remember the retrieved frames so client
+                    # does not need to do it again when they
+                    # save them as images
+                    self.scene_frame_data.append(frame)
+                else:
+                    # Optional: Log that a scene was dropped
+                    self.log.info(f"Scene {idx} in {self.vid_path} removed as duplicate")
 
     def get_smoothed_values(self):
-        """Returns the smoothed values array for plotting/analysis."""
+        """For clients of this class: the smoothed values array for plotting/analysis."""
         return self.smoothed_data
     
     def _apply_gaussian_smoothing(self, data):
@@ -118,34 +171,14 @@ class SceneChangeDetector:
         smoothed = gaussian_filter(data, sigma=self.sigma, order=0, mode='reflect')
         return smoothed
 
-# --- Example Usage ---
-
-# # 1. Create Synthetic Data (Simulating your scenario)
-# # Time is 1-second intervals
-# time = np.arange(0, 50, 1) 
-# # Baseline noise (low values)
-# values = np.random.uniform(0.5, 1.5, size=len(time)) 
-
-# # --- True Scene Change (The signal you WANT to detect) ---
-# # A broad, sustained peak around t=10
-# values[8:13] += [1.0, 3.0, 4.0, 3.5, 1.5]  # Peak at [t=10, 5.0]
-
-# # --- Transient Spikes (The noise you WANT to ignore) ---
-# # Rapid, isolated spikes (high value, low prominence)
-# values[25] += 8.0 # Spike at 9.5
-# values[35] += 7.0 # Spike at 8.5
-
-# df = pd.DataFrame({'time': time, 'current_val': values})
-
-# # 2. Initialize and Run Detector
-# # Initialized to detect peaks >= 4.0 and having prominence >= 3.0
-# detector = SceneChangeDetector(sigma=3, min_prominence=3.0, min_height=4.0)
-
-# detected_changes_df = detector.detect_scenes(df, val_column='current_val')
-
-# # 3. Output Results
-# print("## 📊 Detected Scene Changes (Filtered by Prominence and Height) ##")
-# print(detected_changes_df)
-
-# You can now plot the original data, the smoothed data, and the detected points
-# to visualize how the filtering works.
+    def _is_duplicate(self, new_hist, kept_histograms, threshold=0.85):
+        """
+        Compares new histogram against all kept histograms.
+        Returns True if a match is found.
+        """
+        for kept_hist in kept_histograms:
+            # Compare using Correlation method (1.0 is identical, 0.0 is different)
+            similarity = cv2.compareHist(kept_hist, new_hist, cv2.HISTCMP_CORREL)
+            if similarity > threshold:
+                return True
+        return False
