@@ -3,10 +3,11 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 12:55:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-30 19:46:43
+# @Last Modified time: 2025-12-01 13:29:27
 
 """
-MovieAnalyzer - Analyze scene detection content values in video files
+MovieAnalyzer - Analyze content values in video files, generating
+suggested representative frames for summarizing the movie.
 
 This tool uses PySceneDetect to analyze video content and provides:
 - Statistical analysis of content values
@@ -24,6 +25,7 @@ import pandas as pd
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from matplotlib.widgets import Cursor
 from matplotlib.backend_bases import MouseEvent
 
@@ -41,17 +43,26 @@ from movie_processing.scene_change_detector import SceneChangeDetector
 class MovieAnalyzer:
     """Analyze scene detection metrics for video files."""
     
-    def __init__(self, video_path: str):
+    def __init__(self, 
+                 video_path: str, 
+                 scenecount_max: int | None = None, 
+                 visuals: bool = True):
         """
-        Initialize the MovieAnalyzer.
+        Initialize the MovieAnalyzer. Optionally show time charts of
+        frame-by-frame changes. If scenecount_max is provided, no more
+        than that number of scenes are identified. The reductions are 
+        made by accepting only highly prominent frame change peaks.
         
-        Args:
-            video_path: Path to the video file (.mp4, .mov, etc.)
+        :param video_path: Path to the video file (.mp4, .mov, etc.)
+        :param scenecount_max: optional limit on the number of scenes
+        :param visuals: whether or not to show progress bars and charts
         """
         
         self.video_path = Path(video_path)
         if not self.video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
+        self.scenecount_max = scenecount_max
+        self.visuals = visuals
         
         self.log = LoggingService()
         
@@ -62,44 +73,62 @@ class MovieAnalyzer:
         self.smooth_scene_change_vals: pd.DataFrame = None
         self.scenes: pd.DataFrame = None
         
-    def analyze(self, threshold: float = 27.0) -> None:
+    def analyze(self) -> None:
         """
         Run scene detection analysis on the video.
-        
-        Args:
-            threshold: Content detection threshold (default: 27.0)
         """
         self.log.info(f"Analyzing video: {self.video_path}")
         
         # Initialize video stream
         self.video_stream = open_video(str(self.video_path))
         
-        # Create scene manager and stats manager
+        # Create scene manager and stats manager. The scene manager
+        # coordinates the movie processing:
         self.stats_manager = StatsManager()
         self.scene_manager = SceneManager(self.stats_manager)
         
-        # Add content detector
-        self.scene_manager.add_detector(ContentDetector(threshold=threshold))
+        # Add content detector. It computes visual frame-by-frame 
+        # differences, and produces the values as a score list: content_vals.
+        # The high threshold ensures that the detector records
+        # all content_val values, rather than filtering those
+        # below a threshold:
+        self.scene_manager.add_detector(ContentDetector(threshold=99999.0))
         
         # Find raw frame-content-change values:
-        self.scene_manager.detect_scenes(self.video_stream, show_progress=True)
+        self.scene_manager.detect_scenes(self.video_stream, show_progress=self.visuals)
         
-        # Get detected scenes
-        # ******self.scenes = self.scene_manager.get_scene_list()
-        
-        # Extract the raw content values from stats
+        # Extract the raw content_val number from the stats manager:
         self.raw_scene_change_vals: pd.DataFrame = self._extract_content_values(self.stats_manager)
 
-        # Smooth these values
+        # Smooth these values, and find peaks and prominences
         scene_detector = SceneChangeDetector(self.raw_scene_change_vals)
-        # Obtain a df with just scene change pointer, e.g. for just one scene:
+        # Obtain a df with just scene change pointer, e.g. for just scenes:
         #  idx    content_val  frame_number  timecode   prominence  smoothed_val
         #  159     12.602648       160       5.333333    7.562601     12.153559
+        #                          ...
         self.scenes = scene_detector.detect_scenes()
+        if self.scenecount_max is not None and len(self.scenes) > self.scenecount_max:
+            # Reduce the number of scenes by prioritizing high-prominence 
+            # peaks in the frame-by-frame differences:
 
-        # Just for plotting: get the smoothed content_vals:
-        self.smooth_scene_change_vals = self.raw_scene_change_vals.copy()
-        self.smooth_scene_change_vals['content_val'] = scene_detector.get_smoothed_values()
+            # Keep the original accessible
+            self.all_scenes = self.scenes.copy()
+
+            # Select the top N rows based on prominence
+            # nlargest is generally faster/cleaner than sort_values().head() for this
+            subset = self.scenes.nlargest(self.scenecount_max, 'prominence')
+
+            # Sort back by index (or frame_number) to restore temporal order
+            self.scenes = subset.sort_index()
+
+            # Reset index to have a 0,1,2,... index
+            self.scenes = self.scenes.reset_index(drop=True)           
+
+
+        if self.visuals:
+            # Just for plotting: get the smoothed content_vals:
+            self.smooth_scene_change_vals = self.raw_scene_change_vals.copy()
+            self.smooth_scene_change_vals['content_val'] = scene_detector.get_smoothed_values()
 
         self.log.info(f"Analysis complete. Detected {len(self.scenes)} scenes.")
         self.log.info(f"Analyzed {len(self.smooth_scene_change_vals)} frames.")
@@ -157,7 +186,6 @@ class MovieAnalyzer:
         """
         Compute statistics on content values.
 
-        
         Returns:
             Dictionary containing mean, median, std, min, max
         """
@@ -190,146 +218,72 @@ class MovieAnalyzer:
         print(f"Frames:   {stats['count']}")
         print(f"Scenes:   {len(self.scenes)}")
     
-    def compute_threshold_for_scene_count(self, target_scene_count: int) -> float:
-        """
-        Compute the threshold that would produce the target scene count.
-        
-        This uses binary search to find the appropriate threshold.
-        
-        Args:
-            target_scene_count: Desired number of scenes
-            
-        Returns:
-            Threshold value that produces approximately the target scene count
-        """
-        if not self.raw_scene_change_vals:
-            raise ValueError("No content values available. Run analyze() first.")
-        
-        self.log.info(f"\nSearching for threshold to produce {target_scene_count} scenes...")
-        
-        # Binary search for the right threshold
-        low, high = 0.0, 100.0
-        best_threshold = 27.0
-        best_diff = float('inf')
-        
-        for _ in range(20):  # Max iterations
-            mid = (low + high) / 2
-            
-            # Test this threshold
-            test_video = open_video(str(self.video_path))
-            test_manager = SceneManager()
-            test_manager.add_detector(ContentDetector(threshold=mid))
-            test_manager.detect_scenes(test_video, show_progress=False)
-            scene_count = len(test_manager.get_scene_list())
-            
-            diff = abs(scene_count - target_scene_count)
-            
-            if diff < best_diff:
-                best_diff = diff
-                best_threshold = mid
-            
-            self.log.info(f"  Threshold {mid:.2f} -> {scene_count} scenes (target: {target_scene_count})")
-            
-            if scene_count < target_scene_count:
-                high = mid
-            elif scene_count > target_scene_count:
-                low = mid
-            else:
-                best_threshold = mid
-                break
-        
-        self.log.info(f"\nBest threshold: {best_threshold:.2f} (produces {scene_count} scenes)")
-        return best_threshold
-    
-    def plot_histogram(self, bins: int = 50, save_path: Optional[str] = None) -> None:
-        """
-        Create and display a histogram of content values.
-        
-        Args:
-            bins: Number of histogram bins
-            save_path: Optional path to save the figure
-        """
-        if self.raw_scene_change_vals is None or len(self.raw_scene_change_vals) == 0:
-            raise ValueError("No content values available. Run analyze() first.")
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        ax.hist(self.raw_scene_change_vals, bins=bins, edgecolor='black', alpha=0.7)
-        ax.axvline(np.mean(self.raw_scene_change_vals), color='r', linestyle='--', 
-                   label=f'Mean: {np.mean(self.raw_scene_change_vals):.2f}')
-        ax.axvline(np.median(self.raw_scene_change_vals), color='g', linestyle='--',
-                   label=f'Median: {np.median(self.raw_scene_change_vals):.2f}')
-        
-        ax.set_xlabel('Content Value')
-        ax.set_ylabel('Frequency')
-        ax.set_title(f'Content Value Distribution\n{self.video_path.name}')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            self.save_fig_and_data(save_path, plt)
-            self.log.info(f"Histogram saved to: {save_path}")
-        
-        # Show all plots at the end, in main()
-        # plt.show()
-    
     def plot_timeseries(
             self, 
-            timeseries: pd.DataFrame,
-            subtitle: str = '',
-            interactive: bool = True, 
-            save_path: Optional[str] = None) -> None:
+            timeseries_data: List[pd.DataFrame] | pd.DataFrame,
+            labels: Optional[List[str]] = None,
+            interactive: bool = True
+        ) -> Figure:
         """
         Create and display content values over time.
         
         Args:
-            timeseries: the series to plot
+            timeseries_data: the one or more series to plot
+            labels: optional labels for color legend
             interactive: If True, enable interactive thumbnail preview
             save_path: Optional path to save the figure
         """
         
+        if type(timeseries_data) != list:
+            timeseries_data = [timeseries_data]
+
+        if type(labels) != list:
+            labels = [labels]            
+
+        # Handle case where labels are not provided
+        if labels is None:
+            labels = [f"FrameDiffs {i+1}" for i in range(len(timeseries_data))]        
+
+        # Check if lists match length (Optional safety check)
+        if len(timeseries_data) != len(labels):
+            raise ValueError(f"{len(timeseries_data)} DataFrames but {len(labels)} labels provided.")
+
         fig, ax = plt.subplots(figsize=(14, 6))
-        
-        # Plot content values
-        ax.plot(
-            timeseries['timecode'], 
-            timeseries['content_val'],
-            linewidth=0.8, 
-            alpha=0.7)
+
+        for timeseries, label in zip(timeseries_data, labels):
+            # Plot content values
+            ax.plot(
+                timeseries['timecode'], 
+                timeseries['content_val'],
+                linewidth=1, 
+                alpha=0.8,
+                label=label
+                )
         
         # Mark detected scenes
         for idx, scene in self.scenes.iterrows():
             scene_time = scene['timecode']
-            ax.axvline(scene_time, color='r', alpha=0.3, linewidth=1)
+            ax.axvline(scene_time, color='r', alpha=0.3, linewidth=1, linestyle='--')
         
         ax.set_xlabel('Time (seconds)')
-        ax.set_ylabel('Content Value')
-        ax.set_title(f'Content Value Over Time {subtitle}\n{self.video_path.name} '
-                    f'({len(self.scenes)} scenes detected)')
+        ax.set_ylabel('Content Change Score')
+        # Generate a title based on the labels provided or generic text
+        subtitle_text = ", ".join(labels) if labels and len(labels) < 4 else "Multiple Series"
+        ax.set_title(f'Content Change: {subtitle_text}\n{self.video_path.name} '
+                     f'({len(self.scenes)} scenes detected)')
         ax.grid(True, alpha=0.3)
         
         plt.tight_layout()
         
-        if save_path:
-            self.save_fig_and_data(
-                save_path, 
-                plt, 
-                content_val= timeseries['content_val'],
-                time=timeseries['timecode'] # fractional secs
-                )
-            self.log.info(f"Saved time value change time series to {save_path}/.csv")
-        
         if interactive:
             self._add_interactive_preview(fig, ax)
-        
         # Show all plots at the end in main()
         #plt.show()
+        return fig
     
     def _add_interactive_preview(self, fig, ax) -> None:
         """
-        Add interactive thumbnail preview to the plot.
+        Add interactive movie frame thumbnail preview to the plot.
         
         Args:
             fig: Matplotlib figure
@@ -402,7 +356,7 @@ class MovieAnalyzer:
         self.raw_scene_change_vals.to_csv(output_path)       
         self.log.info(f"Stats saved to: {output_path}")
 
-    def save_fig_and_data(self, fig_path, plt, **kwargs):
+    def save_fig_and_data(self, fig_path, fig, **kwargs):
         '''
         Given a matplotlib figure, and associated data, save the figure
         as png, or other format, and save the data as .csv. The fig_path
@@ -410,10 +364,15 @@ class MovieAnalyzer:
         output format.
         Example:
              '/tmp/myMovieStatsTimes.png'
-        the kwargs may provide any number of data arrays. The each
+
+        The kwargs may provide any number of data arrays. Each
         kwarg key will be a column header. Corresponding value arrays
         will be columns. It is an error for the value arrays to have
-        unequal lengths.
+        unequal lengths. Example for a **kwargs dict:
+              {
+                'content_val': [1,2,3],
+                'timecode'   : [100,200,300]
+              }
 
         The data will be saved in fig_path[without-ext].csv. In this example:
             /tmp/myMovieStatsStatsTimes.csv
@@ -425,15 +384,15 @@ class MovieAnalyzer:
 
         :param fig_path: path to figure save file
         :type fig_path: {str | Path}
-        :param plt: matplotlib figure
-        :type plt: Figure
+        :param fig: Figure to save
+        :type fig: Figure
         '''
         fig_path = Path(fig_path)
         dst_dir = Path(fig_path).parent 
         Path.mkdir(dst_dir, parents=True, exist_ok=True)
 
         # Save the plot
-        plt.savefig(fig_path, dpi=150)
+        fig.savefig(fig_path, dpi=150)
 
         # Save the data, if provided:
         if len(kwargs) > 0:
@@ -448,9 +407,12 @@ def main():
 
     #**************
     #sys.argv.extend(['--save-timeseries', '/home/paepcke/tmp/movies/multipleScenesTimes.png'])
-    sys.argv.extend(['--save-timeseries', '/home/paepcke/tmp/movies/moviePassingTruck.png'])
+    #sys.argv.extend(['--save-timeseries', '/home/paepcke/tmp/movies/moviePassingTruck.png'])
+    sys.argv.extend(['--save-timeseries', '/home/paepcke/tmp/movies/drummers.png'])
+    
     #sys.argv.append('/home/paepcke/tmp/movies/movieMultipleScenes.mp4')
-    sys.argv.append('/home/paepcke/tmp/movies/moviePassingTruck.mp4')
+    #sys.argv.append('/home/paepcke/tmp/movies/moviePassingTruck.mp4')
+    sys.argv.append('/home/paepcke/Videos/drummers_IMG_7944.MOV')
     #**************
 
     log = LoggingService()
@@ -469,27 +431,18 @@ Examples:
     parser.add_argument('video', 
                         type=str, 
                         help='Path to video file')
-    parser.add_argument('-c', '--scenecount', 
-                        help='Target number of scenes (will compute optimal threshold)')
-    parser.add_argument('-t', '--threshold', 
-                        type=float, default=5.0,
-                        help='Content detection threshold (default: 5.0)')
+    parser.add_argument('-c', '--scenecount',
+                        default=None,
+                        help='Limit on number of scenes; default: will find a reasonable number')
     parser.add_argument('-o', '--output', 
                         type=str,
                         help='Save statistics to CSV file')
-    parser.add_argument('--hist-bins', 
-                        type=int, 
-                        default=50,
-                        help='Number of bins for histogram (default: 50)')
-    parser.add_argument('--no-interactive', 
+    parser.add_argument('--no-visuals', 
                         action='store_true',
-                        help='Disable interactive thumbnail preview')
-    parser.add_argument('--save-histogram', 
-                        type=str,
-                        help='Save histogram to file')
+                        help='Disable time series charts and visual progress bars')
     parser.add_argument('--save-timeseries', 
                         type=str,
-                        help='Save time series plot to file')
+                        help='File where to save time series plots')
     
     args = parser.parse_args()
 
@@ -499,68 +452,64 @@ Examples:
                             '.pgf'
                             '.raw'
                             ]
-    if args.save_histogram and not Path(args.save_histogram).suffix in legal_img_extensions:
-        print(f"Only these image extensions are supported: {legal_img_extensions}")
-        sys.exit(1)
 
-    if args.save_timeseries and not Path(args.save_timeseries).suffix in legal_img_extensions:
+    # Defaults is to show charts and progress bars:
+    visuals   = not args.no_visuals
+    save_path = args.save_timeseries
+
+    if visuals \
+        and save_path \
+        and not Path(save_path).suffix in legal_img_extensions:
         print(f"Only these image extensions are supported: {legal_img_extensions}")
         sys.exit(1)
 
     try:
         # Create analyzer
-        analyzer = MovieAnalyzer(args.video)
-        
-        # Run analysis
-        if args.scenecount:
-            # Find optimal threshold for target scene count
-            optimal_threshold = analyzer.compute_threshold_for_scene_count(
-                args.scenecount
-            )
-            # Re-analyze with optimal threshold
-            analyzer.analyze(threshold=optimal_threshold)
-        else:
-            analyzer.analyze(threshold=args.threshold)
+        analyzer = MovieAnalyzer(args.video, scenecount_max=args.scenecount, visuals=visuals)
+        analyzer.analyze()
         
         # Print statistics
-        analyzer.print_statistics(analyzer.raw_scene_change_vals)
-        analyzer.print_statistics(analyzer.smooth_scene_change_vals)
+        if analyzer.visuals:
+            analyzer.print_statistics(analyzer.raw_scene_change_vals)
+            analyzer.print_statistics(analyzer.smooth_scene_change_vals)
         
         # Save stats if requested
         if args.output:
             analyzer.save_stats_csv(args.output)
         
-        # Create visualizations
-        log.info("\nGenerating visualizations...")
-        
-        # Histogram
-        analyzer.plot_histogram(bins=args.hist_bins, 
-                               save_path=args.save_histogram)
-        
-        # Time series with optional interactive preview
-        analyzer.plot_timeseries(
-            analyzer.raw_scene_change_vals,
-            subtitle='raw data',
-            interactive=not args.no_interactive,
-            save_path=args.save_timeseries)
-        
-        # Smoothed series pathname: append '_smoothed' to 
-        # the given timeseries pathname:
-        pname = Path(args.save_timeseries)
-        smoothed_path = Path(pname).parent / f"{pname.stem}_smoothed{pname.suffix}"
-        analyzer.plot_timeseries(
-            analyzer.smooth_scene_change_vals,
-            subtitle='smoothed data',
-            interactive=not args.no_interactive,
-            save_path=str(smoothed_path))
-        
+        if analyzer.visuals:
+            # Create visualizations
+            log.info("\nGenerating visualizations...")
+            
+            # Time series with optional interactive preview
+            fig: plt.Figure = analyzer.plot_timeseries(
+                    [analyzer.raw_scene_change_vals, 
+                     analyzer.smooth_scene_change_vals
+                    ],
+                    labels=['raw data', 'smoothed'],
+                    interactive=True
+            )
+            
+            if save_path:
+                analyzer.save_fig_and_data(
+                    save_path,
+                    fig, 
+                    content_val_raw    = analyzer.raw_scene_change_vals['content_val'],
+                    content_val_smooth = analyzer.smooth_scene_change_vals['content_val'],
+                    time               = analyzer.raw_scene_change_vals['timecode'] # fractional secs
+                    )
+                log.info(f"Saved time value change time series to {save_path}/.csv")
+
+            log.info("Waiting for user to close charts...")
+            plt.show(block=False)
+            while input("Press q to quit...") not in ['q', 'Q']:
+                continue
+
     except Exception as e:
         log.err(f"Error: {e}")
         sys.exit(1)
 
-    log.info("Waiting for user to close charts...")
-    plt.show(block=True)
-    log.info("All charts closed---done.")
+    log.info("done.")
 
 
 if __name__ == '__main__':
