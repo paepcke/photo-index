@@ -1,6 +1,6 @@
 {
     "terminal.integrated.env": {
-        "ANACONDA_ENV_DIR": "/home/paepcke/anaconda3/photo-index",
+        "ANACONDA_ENV_DIR": "/home/paepcke/anaconda3/envs/photo-index",
     },
     "python.envFile": "${workspaceFolder}/.env",
     "terminal.integrated.env.linux": {
