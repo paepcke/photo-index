@@ -2,15 +2,16 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-30 17:17:53
+# @Last Modified time: 2025-11-30 18:10:05
 
 import numpy as np
 import pandas as pd
-from scipy.signal import gaussian, convolve, find_peaks
+from scipy.signal import convolve, find_peaks
+from scipy.ndimage import gaussian_filter
 
 class SceneChangeDetector:
     """
-    Detects significant scene changes in a time-series of 'current_val' 
+    Detects significant scene changes in a time-series of 'content_val' 
     by applying Gaussian smoothing and filtering peaks based on prominence.
     Usage:
       detector = SceneChangeDetector(scene_cur_values)
@@ -24,7 +25,7 @@ class SceneChangeDetector:
             sigma: int = 3, 
             min_prominence: float = 3.0, 
             min_height: float = 4.0,
-            change_magnitude_col: str = 'current_val'):
+            change_magnitude_col: str = 'content_val'):
         """
         Initializes the detector with key parameters.
 
@@ -55,6 +56,10 @@ class SceneChangeDetector:
         else:
             raise TypeError(f"Data must be a dataframe or path to .csv file, not {time_series}")
         
+        # Can we find the content values column?
+        if self.change_magnitude_col not in self.time_series.columns.tolist():
+            raise ValueError(f"Dataframe column {self.change_magnitude_col} not found among columns in {self.time_series}")
+        
         # Determine the window size for the Gaussian kernel (e.g., 6*sigma + 1)
         # 3stds on left of distrib + 3stds on right of distrib ==> 6*sigma
         # The +1 makes the window odd to allow algnments around the mean:
@@ -81,6 +86,11 @@ class SceneChangeDetector:
         
         # 2. Find Peaks (using prominence and height filters)
         # find_peaks returns indices of detected peaks
+        # The properties will be a dict with keys 
+        #      ['peak_heights', 'prominences', 'left_bases', 'right_bases']
+        # These are the same lengths as the scene indices, and correspond
+        # to them. 
+        # The indices point to scene changes:
         indices, properties = find_peaks(
             self.smoothed_data, 
             height=self.min_height,          # Must be greater than min_height
@@ -105,48 +115,37 @@ class SceneChangeDetector:
     def _apply_gaussian_smoothing(self, data):
         """Applies a 1D Gaussian filter to the input data."""
         
-        # 1. Create the Gaussian kernel
-        # We use a 1D Gaussian window from SciPy
-        kernel = gaussian(self.window_size, std=self.sigma)
-        
-        # 2. Normalize the kernel so the area under the curve is 1
-        kernel = kernel / np.sum(kernel)
-        
-        # 3. Convolve the kernel with the data (smoothing)
-        # 'mode="same"' ensures the output array is the same length as the input
-        smoothed = convolve(data, kernel, mode='same')
-        
+        smoothed = gaussian_filter(data, sigma=self.sigma, order=0, mode='reflect')
         return smoothed
-
 
 # --- Example Usage ---
 
-# 1. Create Synthetic Data (Simulating your scenario)
-# Time is 1-second intervals
-time = np.arange(0, 50, 1) 
-# Baseline noise (low values)
-values = np.random.uniform(0.5, 1.5, size=len(time)) 
+# # 1. Create Synthetic Data (Simulating your scenario)
+# # Time is 1-second intervals
+# time = np.arange(0, 50, 1) 
+# # Baseline noise (low values)
+# values = np.random.uniform(0.5, 1.5, size=len(time)) 
 
-# --- True Scene Change (The signal you WANT to detect) ---
-# A broad, sustained peak around t=10
-values[8:13] += [1.0, 3.0, 4.0, 3.5, 1.5]  # Peak at [t=10, 5.0]
+# # --- True Scene Change (The signal you WANT to detect) ---
+# # A broad, sustained peak around t=10
+# values[8:13] += [1.0, 3.0, 4.0, 3.5, 1.5]  # Peak at [t=10, 5.0]
 
-# --- Transient Spikes (The noise you WANT to ignore) ---
-# Rapid, isolated spikes (high value, low prominence)
-values[25] += 8.0 # Spike at 9.5
-values[35] += 7.0 # Spike at 8.5
+# # --- Transient Spikes (The noise you WANT to ignore) ---
+# # Rapid, isolated spikes (high value, low prominence)
+# values[25] += 8.0 # Spike at 9.5
+# values[35] += 7.0 # Spike at 8.5
 
-df = pd.DataFrame({'time': time, 'current_val': values})
+# df = pd.DataFrame({'time': time, 'current_val': values})
 
-# 2. Initialize and Run Detector
-# Initialized to detect peaks >= 4.0 and having prominence >= 3.0
-detector = SceneChangeDetector(sigma=3, min_prominence=3.0, min_height=4.0)
+# # 2. Initialize and Run Detector
+# # Initialized to detect peaks >= 4.0 and having prominence >= 3.0
+# detector = SceneChangeDetector(sigma=3, min_prominence=3.0, min_height=4.0)
 
-detected_changes_df = detector.detect_scenes(df, val_column='current_val')
+# detected_changes_df = detector.detect_scenes(df, val_column='current_val')
 
-# 3. Output Results
-print("## 📊 Detected Scene Changes (Filtered by Prominence and Height) ##")
-print(detected_changes_df)
+# # 3. Output Results
+# print("## 📊 Detected Scene Changes (Filtered by Prominence and Height) ##")
+# print(detected_changes_df)
 
 # You can now plot the original data, the smoothed data, and the detected points
 # to visualize how the filtering works.
