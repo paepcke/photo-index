@@ -2,10 +2,13 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-01 14:43:53
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-01 15:01:56
+# @Last Modified time: 2025-12-01 18:15:35
 
+import os
+from typing import Any, Optional
 import numpy as np
 import cv2
+from PIL import Image
 
 # ------------------- Context Manager VideoStream -----------------
 
@@ -46,7 +49,20 @@ class VideoStream:
 class VideoUtils:
 
     @staticmethod
-    def frame_to_jpeg(frame: np.ndarray, fpath: str):
+    def frame_to_jpeg(frame: np.ndarray, 
+                      fpath: str, 
+                      exif: Optional[dict[int, Any]] = None):
+        '''
+        Given a video frame, as returned by get_video_frame(), or cv2.read(),
+        write the file to JPEG. The optional EXIF data will
+        fields will be written
+
+        :param frame: video frame to save as jpeg
+        :type frame: np.ndarray
+        :param fpath: destination file path
+        :type fpath: str
+        :raises IOError: on write failure
+        '''
         # The function returns True if the file was successfully written, False otherwise.
         success = cv2.imwrite(fpath, frame)
         if not success:
@@ -70,3 +86,122 @@ class VideoUtils:
         # Normalize the histogram so image size doesn't matter
         cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
         return hist
+
+    @staticmethod
+    def get_frame(path: str, frame_num: int) -> np.ndarray:
+        '''
+        Given the path to a video, extract a given
+        frame and return it. The frame_num start at 0.
+
+        :param path: path to video file
+        :type path: str
+        :param frame_num: the index into the frame sequence
+        :type frame_num: int
+        :return: the video frame
+        :rtype: np.ndarray
+        :raise FileNotFoundError when file does not exist
+        :raise IOError when cannot seek or read
+        '''
+        # Number of frames to undershoot if we overshoot
+        # on first try in VFR video:
+        SAFETY_BUF = 100
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File {path} not found")
+        
+        with VideoStream(path) as cap:
+
+            # Ensure frame_num not out of bound:
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if frame_num >= total_frames:
+                msg = (f"File {path} only has {total_frames} frames; " 
+                       f"requested frame {frame_num}")
+                raise IndexError(msg)
+            
+            # Get to either the exact frame, or the next keyframe
+            # below it (in most cases):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+
+            # Check where we actually landed
+            # Note: get() returns the index of the NEXT frame to be decoded
+            current_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+            success = False
+            while True:
+                # SCENARIO A: We landed exactly on target (Ideal)
+                if current_pos == frame_num:
+                    success = True
+                    break
+                elif current_pos < frame_num:
+                    # SCENARIO B: we are at keyframe below target:
+                    frames_to_skip = frame_num - current_pos
+                    # 'Walk' from keyframe to target
+                    for _ in range(frames_to_skip):
+                        cap.grab() # Fast decode
+                    success = True 
+                    break
+                else:
+                    # In VFR file, and we overshot. Do it one more time,
+                    # undershooting:
+                    # Calculate a conservative target
+                    # We aim 'SAFETY_BUF' frames early to avoid overshooting
+                    seek_target = max(0, frame_num - SAFETY_BUF)
+                    
+                    # Perform the Seek (again):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, seek_target)
+                    
+                    # Verify where we landed
+                    current_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                    
+                    # Still overshot. Handle the "Overshoot" (The VFR Disaster)
+                    if current_pos > frame_num:
+                        # We missed the target even with safety buf. Go back
+                        # and walk all the way (expensive!)
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        current_pos = 0
+                        
+                    # Walk the remaining distance ("The Neighborhood")
+                    # This loop bridges the gap between our conservative seek and the target
+                    frames_to_walk = frame_num - current_pos
+                        
+                    if frames_to_walk > 0:
+                        for _ in range(frames_to_walk):
+                            cap.grab()                    
+                    success = True 
+                    break
+
+            if not success:
+                raise IOError(f"Could not seek to frame {frame_num} in file {path}")
+            
+            success, frame = cap.read()
+            if not success:
+                raise IOError(f"Could not read frame {frame_num} from file {path}")
+        return frame
+
+    @staticmethod
+    def show_frame(frame: np.ndarray):
+        '''
+        Show a frame array on the screen as an image.
+        @see also show_file_frame()
+
+        :param frame: frame to display
+        :type frame: np.ndarray
+        '''
+        img = Image.fromarray(frame)
+        img.show()
+
+    @staticmethod
+    def show_file_frame(path: str, frame_num: int):
+        '''
+        Given a file path and a 0-origin frame number,
+        obtain the frame form the file, and display it
+        in an OS-agnostic manner.
+
+        If you have a frame in hand, use show_frame()
+        instead of this method
+
+        :param path: path to source file
+        :type path: str
+        :param frame_num: number of the frame to show
+        :type frame_num: int
+        '''

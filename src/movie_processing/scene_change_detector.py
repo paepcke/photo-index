@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-01 15:00:20
+# @Last Modified time: 2025-12-01 18:29:47
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,10 @@ class SceneChangeDetector:
                         # Frames are ordered to correspond to
                         # the rows in the returned scenes df.
     """
+
+    # Similarity of frame fingerprints above which two
+    # frames are considered duplicates:
+    SIMILARITY_THRESHOLD = 0.9
 
     def __init__(
             self,
@@ -93,10 +97,10 @@ class SceneChangeDetector:
             
         data = self.time_series[self.change_magnitude_col].values
         
-        # 1. Apply Smoothing
+        # Apply Smoothing
         self.smoothed_data = self._apply_gaussian_smoothing(data)
         
-        # 2. Find Peaks (using prominence and height filters)
+        # Find Peaks (using prominence and height filters)
         # find_peaks returns indices of detected peaks
         # The properties will be a dict with keys 
         #      ['peak_heights', 'prominences', 'left_bases', 'right_bases']
@@ -111,7 +115,7 @@ class SceneChangeDetector:
         
         self.scene_change_indices = indices
         
-        # 3. Collect the rows that are scene changes:
+        # Collect the rows that are scene changes:
         scenes = self.time_series.iloc[indices].copy()
         
         # Add the detected prominence and the smoothed value for context
@@ -135,7 +139,7 @@ class SceneChangeDetector:
             frame: np.ndarray
             for idx, scene_row in scenes.iterrows():
                 # Jump to the frame index
-                frame_num = scene_row['frame_num']
+                frame_num = int(scene_row['frame_number'])
                 cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
                 ret, frame = cap.read()
                 
@@ -150,7 +154,9 @@ class SceneChangeDetector:
                 
                 # Check against ALREADY accepted scenes
                 # Note: We check against *kept_histograms*, not just the previous one.
-                if not self._is_duplicate(current_hist, kept_histograms, threshold=0.9):
+                if not self._is_duplicate(current_hist, 
+                                          kept_histograms, 
+                                          threshold=SceneChangeDetector.SIMILARITY_THRESHOLD):
                     final_indices.append(idx)
                     kept_histograms.append(current_hist)
                     # Remember the retrieved frames so client
@@ -160,6 +166,7 @@ class SceneChangeDetector:
                 else:
                     # Optional: Log that a scene was dropped
                     self.log.info(f"Scene {idx} in {self.vid_path} removed as duplicate")
+        return scenes.loc[final_indices]
 
     def get_smoothed_values(self):
         """For clients of this class: the smoothed values array for plotting/analysis."""
@@ -171,11 +178,17 @@ class SceneChangeDetector:
         smoothed = gaussian_filter(data, sigma=self.sigma, order=0, mode='reflect')
         return smoothed
 
-    def _is_duplicate(self, new_hist, kept_histograms, threshold=0.85):
+    def _is_duplicate(self, 
+                      new_hist, 
+                      kept_histograms, 
+                      threshold=None):
         """
         Compares new histogram against all kept histograms.
         Returns True if a match is found.
         """
+        if threshold is None:
+            threshold = SceneChangeDetector.SIMILARITY_THRESHOLD
+            
         for kept_hist in kept_histograms:
             # Compare using Correlation method (1.0 is identical, 0.0 is different)
             similarity = cv2.compareHist(kept_hist, new_hist, cv2.HISTCMP_CORREL)

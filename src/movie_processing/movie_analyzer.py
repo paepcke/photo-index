@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 12:55:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-01 13:29:27
+# @Last Modified time: 2025-12-01 18:23:43
 
 """
 MovieAnalyzer - Analyze content values in video files, generating
@@ -73,9 +73,12 @@ class MovieAnalyzer:
         self.smooth_scene_change_vals: pd.DataFrame = None
         self.scenes: pd.DataFrame = None
         
-    def analyze(self) -> None:
+    def analyze(self) -> List[np.ndarray]:
         """
         Run scene detection analysis on the video.
+        Return a list of frames that display important
+        scenes. Caller can use VideoUtils.show_frame(frame)
+        or VideoUtils.frame_to_jpeg(frame, fname, metadata)
         """
         self.log.info(f"Analyzing video: {self.video_path}")
         
@@ -101,12 +104,18 @@ class MovieAnalyzer:
         self.raw_scene_change_vals: pd.DataFrame = self._extract_content_values(self.stats_manager)
 
         # Smooth these values, and find peaks and prominences
-        scene_detector = SceneChangeDetector(self.raw_scene_change_vals)
+        scene_detector = SceneChangeDetector(self.raw_scene_change_vals, 
+                                             self.video_path)
         # Obtain a df with just scene change pointer, e.g. for just scenes:
         #  idx    content_val  frame_number  timecode   prominence  smoothed_val
         #  159     12.602648       160       5.333333    7.562601     12.153559
         #                          ...
         self.scenes = scene_detector.detect_scenes()
+        # Since the scene_detector had to pull the frames, 
+        # grab them, to have them available for clients of
+        # this class
+        self.scene_frames = scene_detector.scene_frame_data
+
         if self.scenecount_max is not None and len(self.scenes) > self.scenecount_max:
             # Reduce the number of scenes by prioritizing high-prominence 
             # peaks in the frame-by-frame differences:
@@ -132,6 +141,8 @@ class MovieAnalyzer:
 
         self.log.info(f"Analysis complete. Detected {len(self.scenes)} scenes.")
         self.log.info(f"Analyzed {len(self.smooth_scene_change_vals)} frames.")
+
+        return self.scene_frames
         
     def _extract_content_values(self, stats_manager) -> pd.DataFrame:
         '''
