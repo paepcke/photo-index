@@ -2,12 +2,26 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-02 10:17:49
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-02 17:35:15
+# @Last Modified time: 2025-12-02 18:55:46
 
 from enum import Enum
 from typing import List, Optional
+from urllib.parse import urlparse
+import re
 
 from exiftool import ExifToolHelper
+from exiftool.exceptions import ExifToolTagNameError
+
+class FldElements(Enum):
+    NAMESPACE = 0
+    GROUP = 1
+    FIELD_NAME = 2
+
+class FldNmCompleteness(Enum):
+    ERROR      = 0
+    COMPLETE   = 1  # namespace, metadata group, and fld name present
+    GROUPED    = 2  # metadata group and fld name present
+    FIELD_ONLY = 3 # only the field name is present
 
 class FieldType(Enum):
     # Embedded metadata
@@ -36,6 +50,13 @@ class FieldType(Enum):
     
     # Documents
     PDF          = 'PDF'    
+
+    @classmethod
+    def values(cls):
+        # Get a set like: {<FieldType.PDF: 'PDF'>, <FieldType.IPTC: 'IPTC'>, <FieldType.EXIF: 'EXIF'>...}
+        all_entries = set(FieldType)
+        vals = [el.value for el in all_entries]
+        return vals
 
 # ---------------------- Class ImgMDExplorer ------------
 class ImgMDExplorer:
@@ -159,42 +180,23 @@ class ImgMDExplorer:
         # Prepare the field names, depending on 
         # which metadata type is wanted:
         
-        if fld_type == FieldType.XMP:
-            # Prefix fields names with namespace:
-            if fld_nms is None:
-                prefixed_fld_nms = ["XMP:all"]
-            else:
-                prefixed_fld_nms = [f"XMP:{self.namespace}:{tag}"
-                                    for tag
-                                    in fld_nms
-                                    ]
-        
-        elif fld_type == FieldType.EXIF:
-            if fld_nms is None:
-                prefixed_fld_nms = ["EXIF:all"]
-            else:
-                # Just for clarity; not strictly necessary:
-                prefixed_fld_nms = [f"EXIF:{tag}"
-                                    for tag
-                                    in fld_nms
-                                    ]
-
-        elif fld_type == FieldType.IPTC:
-            if fld_nms is None:
-                prefixed_fld_nms = ["IPTC:all"]
-            else:
-                # Just for clarity; not strictly necessary:
-                prefixed_fld_nms = [f"IPTC:{tag}"
-                                    for tag
-                                    in fld_nms
-                                    ]
+        # Prefix fields names with namespace:
+        md_grp = fld_type.value
+        if fld_nms is None:
+            prefixed_fld_nms = ["{md_grp}:all"]
         else:
-            msg = f"Reading from metadata field type {fld_type} not implemented"
-            raise NotImplementedError(msg)
+            prefixed_fld_nms = [
+                f"{md_grp}:{self.namespace}:{tag}" if not tag.startswith(md_grp) else "{self.namespace}:{tag}"
+                for tag
+                in fld_nms
+                ]
 
         with ExifToolHelper() as et:
             try:
                 metadata = et.get_tags(files, tags=prefixed_fld_nms)
+            except ExifToolTagNameError as e:
+                msg = f"Field type {fld_type.name} and one of tag(s) {fld_nms} don't match: {e}"
+                raise ValueError(msg)
             except Exception as e:
                 msg = f"Could not get metadata fields {fld_nms} from file(s) {files}"
                 raise IOError(msg)
@@ -270,3 +272,133 @@ class ImgMDExplorer:
                 fld_nms = list(content.keys())
                 msg = "Could not write fields {fld_nms} to {files}"
                 raise IOError(msg)
+
+    #------------------------------------
+    # _prep_fld_names
+    #-------------------
+
+    def _prep_fld_names(self, fld_type_default, fld_names):
+
+        prepped_flds = []
+        for fld in fld_names:
+            # The different parts of field names like:
+            # File:FileType
+            # EXIF:Camera
+            # <XMP-namespace>:<Group>:<Field-Name>
+            # 
+            completeness = self._get_fld_nm_completeness(fld)
+            if completeness == FldNmCompleteness.COMPLETE:
+                prepped_flds.append(fld)
+                continue
+            if completeness == FldNmCompleteness.****
+
+
+            # Does the fld name start with a metadata group?
+            first_el = elements[0]
+            if first_el in md_groups or self._is_valid_xmp_namespace(first_el)
+                # The element is already qualified
+
+    #------------------------------------
+    # _get_fld_nm_completeness
+    #-------------------
+
+    def _get_fld_nm_completeness(self, fld_spec):
+        '''
+        Returns FldNmCompleteness member:
+           ERROR  if given field spec is malformed
+           FIELD_ONLY if only an unqualified field name is provided
+           GROUPED if a metadata group and fld name are provided
+
+
+        :param fld_spec: _description_
+        :type fld_spec: _type_
+        :return: _description_
+        :rtype: _type_
+        '''
+        elements = fld_spec.split(':')
+        if len(elements) == 0:
+            return FldNmCompleteness.FIELD_ONLY
+        if len(elements) == 1:
+            # Have <str>:<str>
+            # So first element better be a legal metadata group:
+            grp_el = elements[0]
+            if grp_el in FieldType.values():
+                return FldNmCompleteness.GROUPED
+            else:
+                return FldNmCompleteness.ERROR
+        if len(elements) == 3:
+            # First el must be an XMP namespace:
+            ns = elements[0]
+            if not self._is_valid_xmp_namespace(ns):
+                return FldNmCompleteness.ERROR
+            # Next part must be be md group:
+            grp_el = elements[1]
+            if grp_el in FieldType.values():
+                return FldNmCompleteness.COMPLETE
+            else:
+                return FldNmCompleteness.ERROR
+        else:
+            # Too many elements:
+            return FldNmCompleteness.ERROR
+
+
+
+    #------------------------------------
+    # _is_valid_xmp_namespace
+    #-------------------
+
+    def _is_valid_xmp_namespace(self, namespace: str, strict: bool = True) -> bool:
+        """
+        Test whether given string is a valide XMP namespace URI.
+        
+        Args:
+            namespace: String to validate
+            strict: If True, enforce XMP best practices
+        """
+        try:
+            result = urlparse(namespace)
+            
+            # Must have a scheme
+            if not result.scheme:
+                return False
+            
+            if strict:
+                # Common XMP schemes
+                valid_schemes = ['http', 'https', 'urn']
+                if result.scheme not in valid_schemes:
+                    return False
+                
+                # XMP namespaces conventionally end with / or #
+                if not (namespace.endswith('/') or namespace.endswith('#')):
+                    return False
+            
+            return True
+        except:
+
+            return False
+        
+    #------------------------------------
+    # _parse_fld_spec
+    #-------------------        
+
+    def _parse_fld_spec(self, fld_spec):
+        completeness = self._get_fld_nm_completeness(fld_spec)
+        fld_elements = fld_spec.split(':')
+        if completeness == FldNmCompleteness.COMPLETE:
+            return {
+                'completeness' : completeness,
+                'namespace'    : fld_elements[0],
+                'group'        : fld_elements[1],
+                'fld_nm'       : fld_elements[2]
+            }
+        elif completeness == FldNmCompleteness.GROUPED:
+            return {
+                'completeness' : completeness,                
+                'group'        : fld_elements[0],
+                'fld_nm'       : fld_elements[1]                
+            }
+        elif completeness == FldNmCompleteness.FIELD_ONLY:
+            return {
+                'completeness' : completeness,                
+                'fld_nm'       : fld_elements[0]
+            }

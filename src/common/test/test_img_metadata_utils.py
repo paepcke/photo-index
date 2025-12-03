@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-02 14:48:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-02 17:18:41
+# @Last Modified time: 2025-12-02 17:53:57
 
 import os
 from pathlib import Path
@@ -80,10 +80,22 @@ class MDUtilsTester(unittest.TestCase):
     def test_one_fld_one_file(self):
         md = self.img_explorer.read_fields(
             self.jpg_filename,
-            fld_nms='File:FileType',
-            fld_type=FieldType.EXIF
+            fld_nms='FileType',
+            fld_type=FieldType.File
             )
         print(md)
+
+    def test_bad_fld_nm(self):
+        # File:FileType already specifies a group. So
+        # specifying fields type EXIF is wrong
+        with self.assertRaises(ValueError):
+            md = self.img_explorer.read_fields(
+                self.jpg_filename,
+                fld_nms='File:FileType',
+                fld_type=FieldType.EXIF
+                )
+
+
 
 
     # ------------ Utilities --------------
