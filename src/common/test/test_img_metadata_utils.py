@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-02 14:48:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-02 17:53:57
+# @Last Modified time: 2025-12-03 14:44:00
 
 import os
 from pathlib import Path
@@ -11,8 +11,7 @@ import unittest
 from PIL import Image
 from tempfile import TemporaryDirectory
 
-from common.img_metadata_utils import ImgMDExplorer, FieldType
-
+from common.img_metadata_utils import ImgMDExplorer, FieldType, ExifToolWriteError
 class MDUtilsTester(unittest.TestCase):
 
     @classmethod
@@ -55,9 +54,9 @@ class MDUtilsTester(unittest.TestCase):
         #    'File:FileTypeExtension': 'JPG', 
         #    'File:MIMEType': 'image/jpeg',         
         self.assertEqual(type(fld_dict), dict)
-        self.assertEqual(fld_dict['File:FileType'], 'JPEG')
-        self.assertEqual(fld_dict['File:FileTypeExtension'], 'JPG')
-        self.assertEqual(fld_dict['File:MIMEType'], 'image/jpeg')
+        self.assertEqual(fld_dict['FileType'], 'JPEG')
+        self.assertEqual(fld_dict['FileTypeExtension'], 'jpg')
+        self.assertEqual(fld_dict['MIMEType'], 'image/jpeg')
 
     def test_empty_png_md(self):
         md = self.img_explorer.read_fields(self.png_filename)
@@ -73,9 +72,9 @@ class MDUtilsTester(unittest.TestCase):
         #    'File:FileTypeExtension': 'PNG', 
         #    'File:MIMEType': 'image/png',         
         self.assertEqual(type(fld_dict), dict)
-        self.assertEqual(fld_dict['File:FileType'], 'PNG')
-        self.assertEqual(fld_dict['File:FileTypeExtension'], 'PNG')
-        self.assertEqual(fld_dict['File:MIMEType'], 'image/png')
+        self.assertEqual(fld_dict['FileType'], 'PNG')
+        self.assertEqual(fld_dict['FileTypeExtension'], 'png')
+        self.assertEqual(fld_dict['MIMEType'], 'image/png')
 
     def test_one_fld_one_file(self):
         md = self.img_explorer.read_fields(
@@ -83,20 +82,62 @@ class MDUtilsTester(unittest.TestCase):
             fld_nms='FileType',
             fld_type=FieldType.File
             )
-        print(md)
+        self.assertEqual(md['FileType'], 'JPEG')
 
-    def test_bad_fld_nm(self):
-        # File:FileType already specifies a group. So
-        # specifying fields type EXIF is wrong
-        with self.assertRaises(ValueError):
-            md = self.img_explorer.read_fields(
+    def test_two_flds_two_files(self):
+        md = self.img_explorer.read_fields(
+            [self.jpg_filename, self.png_filename],
+            fld_nms='FileType',
+            fld_type=FieldType.File
+            )
+        jpg_md = md[0]
+        png_md = md[1]
+        self.assertEqual(jpg_md['FileType'], 'JPEG')
+        self.assertEqual(png_md['FileType'], 'PNG')
+
+    def test_write_one_exif_fld(self):
+    
+        self.img_explorer.write_fields(
+            self.jpg_filename,
+            {'Make': 'my_camera'},
+            fld_type=FieldType.EXIF
+        )
+        md = self.img_explorer.read_fields(
+            self.jpg_filename,
+            fld_nms='Make',
+            fld_type=FieldType.EXIF
+            )
+        self.assertEqual(md['EXIF:Make'], 'my_camera')
+        
+    def test_write_multiple_custom_flds(self):
+        self.img_explorer.write_fields(
+            [self.jpg_filename, self.png_filename],
+            {
+                'SourceVideoPath': '/tmp/my_movie.mp4',
+                'SourceVideoUID': 'abcde'
+            },
+            FieldType.DRESL
+        )
+        md = self.img_explorer.read_fields(
+            [self.jpg_filename, self.png_filename],
+            ['SourceVideoPath', 'SourceVideoUID'],
+            fld_type=FieldType.DRESL
+            )
+        jpg_md = md[0]
+        png_md = md[1]
+        self.assertEqual(jpg_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
+        self.assertEqual(jpg_md['XMP:SourceVideoUID'], 'abcde')
+        self.assertEqual(png_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
+        self.assertEqual(png_md['XMP:SourceVideoUID'], 'abcde')
+
+    def test_write_exif_one_bad_fld(self):
+        with self.assertRaises(ExifToolWriteError):
+            # 'Camera' is not a legal EXIF field
+            self.img_explorer.write_fields(
                 self.jpg_filename,
-                fld_nms='File:FileType',
+                {'Camera': 'my_camera'},
                 fld_type=FieldType.EXIF
-                )
-
-
-
+            )
 
     # ------------ Utilities --------------
     @classmethod

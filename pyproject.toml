@@ -65,7 +65,7 @@ dependencies = [
 # Optional groups of dependencies (e.g., for development or testing)
 [project.optional-dependencies]
 dev = [
-    # "pytest",
+    "pytest",
     # "flake8",
 ]
 

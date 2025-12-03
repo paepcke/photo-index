@@ -2,33 +2,45 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-02 10:17:49
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-02 18:55:46
+# @Last Modified time: 2025-12-03 14:43:15
 
 from enum import Enum
+from pathlib import Path
+import subprocess
 from typing import List, Optional
 from urllib.parse import urlparse
 import re
 
 from exiftool import ExifToolHelper
-from exiftool.exceptions import ExifToolTagNameError
+from exiftool.exceptions import ExifToolTagNameError, ExifToolExecuteError
 
+class ExifToolWriteError(Exception):
+    """Raised when ExifTool returns an error while writing tags."""
+    def __init__(self, message, diagnostics=None, file=None, tags=None):
+        super().__init__(message)
+        self.diagnostics = diagnostics
+        self.file = file
+        self.tags = tags
+
+    def __str__(self):
+        base = super().__str__()
+        if self.diagnostics:
+            return f"{base}\n\nDiagnostics:\n{self.diagnostics}"
+        return base
 class FldElements(Enum):
     NAMESPACE = 0
     GROUP = 1
     FIELD_NAME = 2
 
-class FldNmCompleteness(Enum):
-    ERROR      = 0
-    COMPLETE   = 1  # namespace, metadata group, and fld name present
-    GROUPED    = 2  # metadata group and fld name present
-    FIELD_ONLY = 3 # only the field name is present
-
 class FieldType(Enum):
+    # Custom Photo Indexing
+    DRESL        = 'XMP-dresl'
     # Embedded metadata
     XMP          = 'XMP'
     EXIF         = 'EXIF'
     IPTC         = 'IPTC'
     GPS          = 'GPS'
+    DublinCore   = 'dc'
     
     # File info
     File         = 'File'
@@ -92,27 +104,25 @@ class ImgMDExplorer:
  
     '''
 
-    DEFAULT_NAMESPACE = 'http://dresl.com/xmp/photo_index/1.0/'
+    DEFAULT_NAMESPACE = 'XMP-dresl'
 
     #------------------------------------
     # Constructor
     #-------------------    
 
-    def __init__(self, namespace: Optional[str] = None):
+    def __init__(self, config_file: Optional[str] = None):
         '''
         XMP metadata is partitioned into namespaces.
         If caller has one, great. Else, use the default.
         Namespaces are not used for the other 
         metadata types.
 
-        :param namespace: XMP namespace identifier, defaults to None
-        :type namespace: str, optional
+        :param config_file: XMP namespace initialization
         '''
 
-        if namespace is None:
-            self.namespace = ImgMDExplorer.DEFAULT_NAMESPACE
-        else:
-            self.namespace = namespace
+        if config_file is None:
+            cur_dir = Path(__file__).parent
+            self.config_path = Path.joinpath(cur_dir, 'exiftool.config')
         
     #------------------------------------
     # read_field
@@ -123,7 +133,7 @@ class ImgMDExplorer:
             files: str | List[str],
             fld_nms: Optional[str | List[str]] = None, 
             fld_type: Optional[FieldType.XMP] = None
-            ) -> List[dict[str, str]]:
+            ) -> dict[str, str] | List[dict[str, str]]:
         '''
         Use for reading any of the metadata types.
         Can read a set of fields from multiple files
@@ -138,34 +148,34 @@ class ImgMDExplorer:
            ImgMDExplorer.read_fields(['myfile1.jpg'],
                                      fld_type=FieldType.EXIF
                                      )
-        Fields named 'foo' and 'bar' from XMP metadata:
+        Fields named 'Rating' and 'CreateDate' from XMP metadata:
            ImgMDExplorer.read_fields(['myfile1.jpg'],
-                                     fld_nms=['foo', 'bar'],
+                                     fld_nms=['Rating', 'CreateDate'],
                                      fld_type=FieldType.XMP
                                      )
-                                              
+
+        If metadata from only one file is requested, returns
+        that file's metadata dict, else a list of md dicts.
+                                                                                   
         :param files: files from which to read the metadata
-        :type files: str | List[str]
         :param fld_nms: names of metadata fields, without any prefixes
-        :type fld_nms: Optional[str  |  List[str]]
         :param fld_type: from which kind of metadata to read.
             If None, read from all fields
-        :type fld_type: FieldType, optional
         :raises IOError: if any of the reads from any of the files fails
         :raises NotImplementedError: for unimplemented metadata standards
         :return: list of dictionaries with results
         :rtype: List[dict[str, str]]
         '''
-
+        # Single file -> list of files:
         if type(files) == str:
             files = [files]
         
         # Do they want all metadata from all fields?
         if fld_type is None:
             try:
-                with ExifToolHelper() as et:
+                with ExifToolHelper(config_file=self.config_path) as et:
                     metadata = et.get_metadata(files)
-                    return metadata
+                    return metadata if len(metadata) > 1 else metadata[0]
             except Exception as e:
                 raise IOError(f"Could not get all the metadata from files {files}")
         
@@ -179,21 +189,12 @@ class ImgMDExplorer:
 
         # Prepare the field names, depending on 
         # which metadata type is wanted:
-        
-        # Prefix fields names with namespace:
-        md_grp = fld_type.value
-        if fld_nms is None:
-            prefixed_fld_nms = ["{md_grp}:all"]
-        else:
-            prefixed_fld_nms = [
-                f"{md_grp}:{self.namespace}:{tag}" if not tag.startswith(md_grp) else "{self.namespace}:{tag}"
-                for tag
-                in fld_nms
-                ]
+        prepped_fld_nms = self._prep_fld_names(fld_nms,
+                                               fld_type_default=fld_type)        
 
-        with ExifToolHelper() as et:
+        with ExifToolHelper(config_file=self.config_path) as et:
             try:
-                metadata = et.get_tags(files, tags=prefixed_fld_nms)
+                metadata = et.get_tags(files, tags=prepped_fld_nms)
             except ExifToolTagNameError as e:
                 msg = f"Field type {fld_type.name} and one of tag(s) {fld_nms} don't match: {e}"
                 raise ValueError(msg)
@@ -202,8 +203,12 @@ class ImgMDExplorer:
                 raise IOError(msg)
 
         # Will have a list of dicts, one for
-        # each file:
-        return metadata
+        # each file. If md of only only one file was requested,
+        # return just one dict:
+        if len(metadata) == 1:
+            return metadata[0]
+        else:
+            return metadata
     
     #------------------------------------
     # write_fields
@@ -229,55 +234,126 @@ class ImgMDExplorer:
                                      {'myfield': 10,
                                       'directory': '/myphotos/images'
                                      }
-                                     FieldType.EXIF
+                                     FieldType.DRESL
                                      )
 
         :param files: destination paths
-        :type files: str | List[str]
         :param content: dict of the key/value pairs. No XMP prefix for keys
-        :type content: dict[str, str]
         :param fld_type: which metadata standard, defaults to FieldType.XMP
-        :type fld_type: FieldType, optional
-        :raises NotImplementedError: unknown metadata type
-        :raises IOError: on failure
+        :raises ExifToolWriteError: if ExifTool reports an error
         '''
 
         if type(files) == str:
             files = [files]
-        
-        if FieldType == FieldType.XMP:
-            # Prefix all keys with XMP:<namespace>:
-            keys_prefixed = [f"XMP:{self.namespace}:{tag}"
-                                for tag
-                                in content.keys()
-                                ]
-        elif FieldType == FieldType.EXIF:
-            keys_prefixed = [f"EXIF:{tag}"
-                                for tag
-                                in content.keys()
-                                ]            
-        else:
-            msg = f"Writing to metadata field type {fld_type} not implemented"
-            raise NotImplementedError(msg)
+
+        keys_prefixed = self._prep_fld_names(list(content.keys()),
+                                             fld_type_default=fld_type
+                                             )        
         
         # Make a new fieldNm/value dict with the prefixed keys:
         content_prefixed = {key_prefixed : val 
                             for key_prefixed, val 
                             in zip(keys_prefixed, content.values())
                             }
-        with ExifToolHelper() as et:
-            try:
-                et.set_tags(files, content_prefixed)
-            except Exception as e:
-                fld_nms = list(content.keys())
-                msg = "Could not write fields {fld_nms} to {files}"
-                raise IOError(msg)
+        # Throws error if anything goes wrong 
+        # at any point in the loop through the
+        # files:
+        with ExifToolHelper(config_file=self.config_path) as et:
+            for file_path in files:
+                # Get detailed error msgs (the -v3):
+                diagnostics = self._write_to_one_file(
+                    et,
+                    file_path,
+                    content_prefixed
+                )
+            
+    #------------------------------------
+    # _write_to_one_file
+    #-------------------
+
+    def _write_to_one_file(self,
+        et: ExifToolHelper,
+        file_path: str,
+        tags: dict,
+        verbose: int = 2,
+        overwrite: bool = True
+        ):
+        """
+        Write a set of metadata safely, returning diagnostics 
+        and structured results.
+
+        :param et: An active ExifToolHelper instance (inside a `with` block)
+        :param file_path: Path to the target file
+        :param tags: Dict of tags to write
+        :param verbose: Verbosity level for ExifTool (-v, -v2, etc.)
+        :param overwrite: Whether to pass -overwrite_original
+        :raises ExifToolWriteError: if ExifTool reports an error
+        :return: dict with keys: 'ok', 'diagnostics', 'file', 'tags'
+        """
+
+        # Convert tags to ExifTool's "-TAG=VALUE" form
+        args = []
+        for tag, value in tags.items():
+            args.append(f"-{tag}={value}")
+
+        # ExifTool parameters
+        params = ['-config', str(self.config_path)]
+        if overwrite:
+            params.append("-overwrite_original")
+
+        # Verbosity level
+        vflag = f"-v{verbose}" if verbose > 0 else "-v"
+        params.append(vflag)
+
+        # Final argument list: params + tag assignments + file path
+        full_args = params + args + [file_path]
+
+        # ---- Run the command with raw output (diagnostics included) ----
+        try:
+            output_lines = et.execute(*full_args)
+            return True
+        except ExifToolExecuteError as e:
+                # FAILURE path — diagnostics available here
+                diagnostics = e.stdout + "\n" + e.stderr
+                raise ExifToolWriteError(
+                    f"ExifTool failed while writing metadata to '{file_path}'.",
+                    diagnostics=diagnostics.strip(),
+                    file=file_path,
+                    tags=tags
+                )
+        except Exception as e:
+            # This captures Python-level issues (rare)
+            raise ExifToolWriteError(
+                f"Failed to execute ExifTool: {e}",
+                diagnostics=None,
+                file=file_path,
+                tags=tags
+            )
 
     #------------------------------------
     # _prep_fld_names
     #-------------------
 
-    def _prep_fld_names(self, fld_type_default, fld_names):
+    def _prep_fld_names(self, 
+                        fld_names: List[str] | str,
+                        fld_type_default: Optional[str] = None
+                        ) -> List[str]:
+        '''
+        Given field type and a list of metadata field names,
+        return a new list of field names that are modified to
+        be legally passed to ExifToolHelper for reading/writing.
+        Example:
+            _prep_fld_names(['foo', 'bar])
+                -> ['XMP-dresl:foo', 'XMP-dresl':bar']
+            _prep_fld_names(['EXIF:ImageHeight', 'creator'], FieldType.DublinCore)
+                <-> ['EXIF:ImageHeight', 'dc:creator']
+
+        :param fld_type_default: the intended metadata standard
+        :param fld_names: metadata field name(s) 
+        :raises ValueError: for field names that cannot be resolved
+        :return: _description_
+        :rtype: _type_
+        '''
 
         prepped_flds = []
         for fld in fld_names:
@@ -286,62 +362,79 @@ class ImgMDExplorer:
             # EXIF:Camera
             # <XMP-namespace>:<Group>:<Field-Name>
             # 
-            completeness = self._get_fld_nm_completeness(fld)
-            if completeness == FldNmCompleteness.COMPLETE:
+            fld_elements = self._parse_fld_spec(fld)
+            if len(fld_elements) > 1:
+                # Field is already completely qualified with
+                # namespace and group, or with group:
+                #    <ns>:<GroupName>:<FldName>
+                # or <GroupName>:<FldName>
                 prepped_flds.append(fld)
                 continue
-            if completeness == FldNmCompleteness.****
+            else:
+                # Field spec is just a field name. Prepend group
+                # if provided:
+                if fld_type_default is not None:
+                    prepped_flds.append(f"{fld_type_default.value}:{fld}")
+                else:
+                    prepped_flds.append(fld)
+                continue
 
-
-            # Does the fld name start with a metadata group?
-            first_el = elements[0]
-            if first_el in md_groups or self._is_valid_xmp_namespace(first_el)
-                # The element is already qualified
+        return prepped_flds
 
     #------------------------------------
-    # _get_fld_nm_completeness
-    #-------------------
+    # _parse_fld_spec
+    #-------------------        
 
-    def _get_fld_nm_completeness(self, fld_spec):
+    def _parse_fld_spec(self, fld_spec: str) -> dict[str, str]:
         '''
-        Returns FldNmCompleteness member:
-           ERROR  if given field spec is malformed
-           FIELD_ONLY if only an unqualified field name is provided
-           GROUPED if a metadata group and fld name are provided
-
-
-        :param fld_spec: _description_
-        :type fld_spec: _type_
-        :return: _description_
-        :rtype: _type_
+        Returns dict with the elements of the 
+        given field spec:
+            fld_nm, group, namespace.
+        One, two, or all three of these may be present in the
+        returned dict.
+            
+        :param fld_spec: metadata field name to examine
+        :return: information on which parts of a metadata spec is included
+            in the field spec
         '''
-        elements = fld_spec.split(':')
-        if len(elements) == 0:
-            return FldNmCompleteness.FIELD_ONLY
-        if len(elements) == 1:
+        fld_elements = fld_spec.split(':')
+        if len(fld_elements) == 1:
+
+            return {
+                'fld_nm'       : fld_elements[0]
+            }            
+        if len(fld_elements) == 2:
+
+            grp_el = fld_elements[0] 
+            if grp_el not in FieldType.values():
+                raise NotImplementedError(f"Metadata group {grp_el} in {fld_spec} is unknown")
+
             # Have <str>:<str>
             # So first element better be a legal metadata group:
-            grp_el = elements[0]
-            if grp_el in FieldType.values():
-                return FldNmCompleteness.GROUPED
-            else:
-                return FldNmCompleteness.ERROR
-        if len(elements) == 3:
+            return {
+                'group'        : grp_el,
+                'fld_nm'       : fld_elements[1]                
+            }
+
+        if len(fld_elements) == 3:
             # First el must be an XMP namespace:
-            ns = elements[0]
+            ns = fld_elements[0]
             if not self._is_valid_xmp_namespace(ns):
-                return FldNmCompleteness.ERROR
+                raise ValueError(f"The '{ns}' part of field {fld_spec} is not a proper XMP namespace")
+
             # Next part must be be md group:
-            grp_el = elements[1]
-            if grp_el in FieldType.values():
-                return FldNmCompleteness.COMPLETE
-            else:
-                return FldNmCompleteness.ERROR
+            grp_el = fld_elements[1]
+            if grp_el not in FieldType.values():
+                raise NotImplementedError(f"Metadata group {grp_el} in {fld_spec} is unknown")
+            return {
+                'group'        : grp_el,
+                'fld_nm'       : fld_elements[1],
+                'namespace'    : ns
+            }
+            
         else:
             # Too many elements:
-            return FldNmCompleteness.ERROR
-
-
+            raise ValueError(f"Metadata field {fld_spec} has too many colons (max is 3)")
 
     #------------------------------------
     # _is_valid_xmp_namespace
@@ -376,29 +469,3 @@ class ImgMDExplorer:
         except:
 
             return False
-        
-    #------------------------------------
-    # _parse_fld_spec
-    #-------------------        
-
-    def _parse_fld_spec(self, fld_spec):
-        completeness = self._get_fld_nm_completeness(fld_spec)
-        fld_elements = fld_spec.split(':')
-        if completeness == FldNmCompleteness.COMPLETE:
-            return {
-                'completeness' : completeness,
-                'namespace'    : fld_elements[0],
-                'group'        : fld_elements[1],
-                'fld_nm'       : fld_elements[2]
-            }
-        elif completeness == FldNmCompleteness.GROUPED:
-            return {
-                'completeness' : completeness,                
-                'group'        : fld_elements[0],
-                'fld_nm'       : fld_elements[1]                
-            }
-        elif completeness == FldNmCompleteness.FIELD_ONLY:
-            return {
-                'completeness' : completeness,                
-                'fld_nm'       : fld_elements[0]
-            }
