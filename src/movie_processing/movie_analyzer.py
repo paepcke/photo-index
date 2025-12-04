@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 12:55:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-01 18:23:43
+# @Last Modified time: 2025-12-04 10:44:20
 
 """
 MovieAnalyzer - Analyze content values in video files, generating
@@ -76,7 +76,7 @@ class MovieAnalyzer:
     def analyze(self) -> List[np.ndarray]:
         """
         Run scene detection analysis on the video.
-        Return a list of frames that display important
+        Return a list of video frames that display important
         scenes. Caller can use VideoUtils.show_frame(frame)
         or VideoUtils.frame_to_jpeg(frame, fname, metadata)
         """
@@ -110,12 +110,13 @@ class MovieAnalyzer:
         #  idx    content_val  frame_number  timecode   prominence  smoothed_val
         #  159     12.602648       160       5.333333    7.562601     12.153559
         #                          ...
-        self.scenes = scene_detector.detect_scenes()
+        self.scenes = scene_detector.detect_scenes(scene_detector.time_series)
         # Since the scene_detector had to pull the frames, 
         # grab them, to have them available for clients of
         # this class
         self.scene_frames = scene_detector.scene_frame_data
 
+        # Are we to limit the number of scenes?
         if self.scenecount_max is not None and len(self.scenes) > self.scenecount_max:
             # Reduce the number of scenes by prioritizing high-prominence 
             # peaks in the frame-by-frame differences:

@@ -2,8 +2,9 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-01 18:29:47
+# @Last Modified time: 2025-12-04 15:38:26
 
+from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
@@ -32,16 +33,26 @@ class SceneChangeDetector:
 
     def __init__(
             self,
-            time_series: {pd.DataFrame | str},
+            time_series_spec: {pd.DataFrame | pd.Series | str},
             vid_path: str,
-            sigma: int = 3, 
-            min_prominence: float = 3.0, 
-            min_height: float = 4.0,
-            change_magnitude_col: str = 'content_val') -> pd.DataFrame:
+            sigma: Optional[int] = 3, 
+            min_prominence: Optional[float] = 3.0, 
+            min_height: Optional[float] = 4.0,
+            change_magnitude_col: Optional[str] = 'content_val') -> pd.DataFrame:
         """
         Initializes the detector with key parameters.
+        The time_series_spec will be loaded into a df from file if the 
+        path of a .csv is given. The loaded, or directly given
+        df must include a column named as given by change_magnitude_col.
+        Example, a df with columns:
+            content_val    frame_number     timecode
 
-        :param time_series: either path to a .csv file, or a Pandas dataframe
+        The pd.Series found by the above procedure will be available
+        to callers in
+
+              <scene-change-detector-instance>.time_series
+
+        :param time_series_spec: either path to a .csv file, or a Pandas dataframe
         :param vid_path: path to the video for lifting frames.
         :param sigma: The standard deviation (spread) of the Gaussian filter. 
                          Higher sigma means more smoothing.
@@ -58,47 +69,57 @@ class SceneChangeDetector:
         self.min_height = min_height
         self.smoothed_data = None
         self.scene_change_indices = None
-        self.change_magnitude_col = change_magnitude_col
 
         self.log = LoggingService()
 
-        if type(time_series) == str:
+        # Did we get the path to a .csv file, a dataframe with
+        # one particular column being the relevant time series,
+        # or directly the needed pd.Series?
+        time_series_df = None
+        if type(time_series_spec) == str:
             try:
-                self.time_series = pd.read_csv(time_series)
+                # Load .csv into df
+                time_series_df = pd.read_csv(time_series_spec)
             except Exception as e:
-                raise FileNotFoundError(f"Could not open .csv file {time_series}")
-        elif type(time_series) == pd.DataFrame:
-            self.time_series = time_series 
+                raise FileNotFoundError(f"Could not open .csv file {time_series_spec}")
+        elif type(time_series_spec) == pd.DataFrame:
+            time_series_df = time_series_spec
+        elif type(time_series_spec) == pd.Series:
+            # Got the desired Series directly
+            self.time_series = time_series_spec
         else:
-            raise TypeError(f"Data must be a dataframe or path to .csv file, not {time_series}")
+            raise TypeError(f"Data must be a dataframe or path to .csv file, not {time_series_spec}")
         
-        # Can we find the content values column?
-        if self.change_magnitude_col not in self.time_series.columns.tolist():
-            raise ValueError(f"Dataframe column {self.change_magnitude_col} not found among columns in {self.time_series}")
-        
+        # If we now have a df with the needed time series 
+        # as one of its columns, get that column into a Series:
+        if time_series_df is not None:
+            # Can we find the content values column?
+            if change_magnitude_col not in time_series_df.columns.tolist():
+                raise ValueError(f"Dataframe column {change_magnitude_col} not found among columns in {self.time_series}")
+            self.time_series = time_series_df[change_magnitude_col]
+            
         # Determine the window size for the Gaussian kernel (e.g., 6*sigma + 1)
         # 3stds on left of distrib + 3stds on right of distrib ==> 6*sigma
         # The +1 makes the window odd to allow algnments around the mean:
         self.window_size = int(6 * self.sigma + 1)
 
-    def detect_scenes(self):
+    def detect_scenes(self, time_series: pd.Series) -> pd.DataFrame:
         """
         Processes the time series to detect scene changes.
 
         Args:
-            time_series (pd.DataFrame): DataFrame with time and value columns.
+            time_series (pd.Series): DataFrame with time and value columns.
             val_column (str): The name of the column containing the current values.
 
         Returns:
-            pd.DataFrame: A DataFrame containing the detected scene change times and values.
+            pd.DataFrame: A DataFrame containing the detected scene 
+                change times and values.
         """
-        if not isinstance(self.time_series, pd.DataFrame):
-            raise TypeError("Input must be a pandas DataFrame.")
+        if not isinstance(self.time_series, pd.Series):
+            raise TypeError("Input must be a pandas Series.")
             
-        data = self.time_series[self.change_magnitude_col].values
-        
         # Apply Smoothing
-        self.smoothed_data = self._apply_gaussian_smoothing(data)
+        self.smoothed_data = self._apply_gaussian_smoothing(time_series)
         
         # Find Peaks (using prominence and height filters)
         # find_peaks returns indices of detected peaks
@@ -115,21 +136,58 @@ class SceneChangeDetector:
         
         self.scene_change_indices = indices
         
-        # Collect the rows that are scene changes:
-        scenes = self.time_series.iloc[indices].copy()
-        
-        # Add the detected prominence and the smoothed value for context
-        scenes['prominence'] = properties['prominences']
-        scenes['smoothed_val'] = self.smoothed_data[indices]
+        # Make a result df like:
+        #    idx    frame_number   content_val    prominence    smoothed_val
+        # Collect the rows that are scene changes.
+        # This will be a pd.Series in which the index
+        # values are the frame numbers, and the Series
+        # values are the content_vals (i.e. frame change scores)
+        scene_data = self.time_series.iloc[indices].copy()
+        scenes = pd.DataFrame({
+            'frame_number': scene_data.index,
+            'prominence'  : properties['prominences'],
+            'smoothed_content_val': self.smoothed_data[indices],
+            'content_vals': scene_data.values
+        })
 
         uniq_scenes = self.deduplicate(scenes, self.vid_path)
         return uniq_scenes
 
     def deduplicate(self, scenes: pd.DataFrame, video_path: str) -> pd.DataFrame:
+        '''
+        Removes duplicates from the given scenes df, and returns two items:
+           1. A dataframe excerpted from the input scenes, in which near-duplicate 
+              scenes are removed. Like:
+                   frame_number  prominence  smoothed_content_val  content_vals
+                0            27    4.783040              9.630631      9.620940
+                1           294    7.560820              9.915100     10.103290
+                4          1180    3.769875             14.477572     14.661802
+                5          1278    5.455810             10.201112     10.268808
+
+           2. A pd.Series: where each value is the np.ndarray of one
+              scene video frame; ready to be displayed or saved to file.
+              The Series' index holds the frame numbers within the
+              movie.
+           
+
+        ADDITIONALLY: provides in <scene-change-detector>.scene_frame_data 
+        a pd.Series in scene_frame_data, in which 
+        each value is the raw video frame of one scene. The index provides
+        the frame numbers from which the images came. The name of the
+        Series will be 'frame_images'.
+
+        Callers can obtain save such a row as a movie file, or display it as
+        a still image.
+
+        :param scenes: the detected scenes
+        :param video_path: path to the movie file
+        :raises IOError: if movie can't be loaded
+        :return: a new df with duplicate scenes eliminated.
+        '''
         
         final_indices = []
         kept_histograms = []
-        self.scene_frame_data = []
+        scene_frame_data = []
         
         # Open video to grab frames at specific indices
         with VideoStream(video_path) as cap:
@@ -162,11 +220,22 @@ class SceneChangeDetector:
                     # Remember the retrieved frames so client
                     # does not need to do it again when they
                     # save them as images
-                    self.scene_frame_data.append(frame)
+                    scene_frame_data.append(frame)
                 else:
                     # Optional: Log that a scene was dropped
                     self.log.info(f"Scene {idx} in {self.vid_path} removed as duplicate")
-        return scenes.loc[final_indices]
+
+        dedupped_scenes = scenes.loc[final_indices]
+        # Turn the saved raw frames into a pd.Series w
+        # where each value is a raw frame, and its index
+        # value is the frame number
+        self.scene_frame_data = pd.Series(
+            data=scene_frame_data, 
+            index=dedupped_scenes['frame_number'],
+            name='frame_images'
+            )
+
+        return dedupped_scenes
 
     def get_smoothed_values(self):
         """For clients of this class: the smoothed values array for plotting/analysis."""
