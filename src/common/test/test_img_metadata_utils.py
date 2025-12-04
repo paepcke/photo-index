@@ -2,13 +2,15 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-02 14:48:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-03 18:27:55
+# @Last Modified time: 2025-12-03 18:48:36
 
 import os
 from pathlib import Path
 import shutil
 import unittest
 from PIL import Image
+# Import the HEIF-specific loader/saver
+from pillow_heif import register_heif_opener
 from tempfile import TemporaryDirectory
 
 import ffmpeg
@@ -19,12 +21,16 @@ class MDUtilsTester(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cur_dir = os.path.dirname(__file__)
+
+        # Register the HEIF format so Pillow recognizes it
+        register_heif_opener()
+        
         # Create self.jpg_filename and self.png_filename
         # containing test images:
-        cls.create_tst_img()
+        cls.create_tst_imgs()
 
         # Create .mp4 and .mov test movies
-        cls.create_tst_mov()
+        cls.create_tst_movies()
         cls.tmp_dir = TemporaryDirectory(prefix='metadata_tsts', dir='/tmp')
 
     @classmethod
@@ -40,6 +46,7 @@ class MDUtilsTester(unittest.TestCase):
         # Copy fresh .jpg and .png files to the temp dir:
         shutil.copy(self.jpg_filename, self.tmp_dir.name)
         shutil.copy(self.png_filename, self.tmp_dir.name)
+        shutil.copy(self.heic_filename, self.tmp_dir.name)
 
         # Same for .mp4 and .mov movies:
         shutil.copy(self.mp4_filename, self.tmp_dir.name)
@@ -86,16 +93,18 @@ class MDUtilsTester(unittest.TestCase):
             )
         self.assertEqual(md['File:FileType'], 'JPEG')
 
-    def test_two_flds_two_files(self):
+    def test_two_flds_three_files(self):
         md = self.img_explorer.read_fields(
-            [self.jpg_filename, self.png_filename],
+            [self.jpg_filename, self.png_filename, self.heic_filename],
             fld_nms='FileType',
             fld_type=FieldType.File
             )
         jpg_md = md[0]
         png_md = md[1]
+        heic_md = md[2]
         self.assertEqual(jpg_md['File:FileType'], 'JPEG')
         self.assertEqual(png_md['File:FileType'].lower(), 'png')
+        self.assertEqual(heic_md['File:FileType'].lower(), 'heic')
 
     def test_write_one_exif_fld(self):
     
@@ -113,7 +122,7 @@ class MDUtilsTester(unittest.TestCase):
         
     def test_write_multiple_custom_flds(self):
         self.img_explorer.write_fields(
-            [self.jpg_filename, self.png_filename],
+            [self.jpg_filename, self.png_filename, self.heic_filename],
             {
                 'SourceVideoPath': '/tmp/my_movie.mp4',
                 'SourceVideoUID': 'abcde'
@@ -121,16 +130,19 @@ class MDUtilsTester(unittest.TestCase):
             FieldType.DRESL
         )
         md = self.img_explorer.read_fields(
-            [self.jpg_filename, self.png_filename],
+            [self.jpg_filename, self.png_filename, self.heic_filename],
             ['SourceVideoPath', 'SourceVideoUID'],
             fld_type=FieldType.DRESL
             )
         jpg_md = md[0]
         png_md = md[1]
+        heic_md = md[2]
         self.assertEqual(jpg_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
         self.assertEqual(jpg_md['XMP:SourceVideoUID'], 'abcde')
         self.assertEqual(png_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
         self.assertEqual(png_md['XMP:SourceVideoUID'], 'abcde')
+        self.assertEqual(heic_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
+        self.assertEqual(heic_md['XMP:SourceVideoUID'], 'abcde')
 
     def test_write_exif_one_bad_fld(self):
         with self.assertRaises(ExifToolWriteError):
@@ -179,7 +191,7 @@ class MDUtilsTester(unittest.TestCase):
 
     # ------------ Utilities --------------
     @classmethod
-    def create_tst_img(cls):
+    def create_tst_imgs(cls):
         width = 100
         height = 50
         # Can be a color name or an RGB tuple, e.g., (255, 0, 0) for red
@@ -201,6 +213,10 @@ class MDUtilsTester(unittest.TestCase):
             # The 'quality' argument is for JPEG only (0-100, default is 75)
             img.save(cls.jpg_filename, 'jpeg', quality=95)
 
+            # Save as HEIC:
+            cls.heic_filename = os.path.join(cls.cur_dir,"heic_image.heic")
+            img.save(cls.heic_filename, format="HEIF", quality=80)
+
         except ImportError:
             print("Error: Pillow is not installed. Please run 'pip install Pillow'")
         except Exception as e:
@@ -208,7 +224,7 @@ class MDUtilsTester(unittest.TestCase):
         return (cls.png_filename, cls.jpg_filename)
 
     @classmethod
-    def create_tst_mov(cls):
+    def create_tst_movies(cls):
 
         # Create an mp4 est clip:
         
