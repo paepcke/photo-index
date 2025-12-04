@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-02 14:48:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-03 16:59:09
+# @Last Modified time: 2025-12-03 18:27:55
 
 import os
 from pathlib import Path
@@ -141,6 +141,40 @@ class MDUtilsTester(unittest.TestCase):
                 fld_type=FieldType.EXIF
             )
 
+    def test_mp4_one_fld(self):
+        self.img_explorer.write_fields(
+            self.mp4_filename,
+            {'SourceVideoPath': '/tmp/my_movie.mp4'},
+            fld_type=FieldType.DRESL
+        )
+        md = self.img_explorer.read_fields(
+            self.mp4_filename,
+            fld_nms='SourceVideoPath',
+            fld_type=FieldType.DRESL
+            )
+        self.assertEqual(md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
+        
+
+    def test_write_movie_multiple_custom_flds(self):
+        self.img_explorer.write_fields(
+            [self.mp4_filename, self.qt_filename],
+            {
+                'SourceVideoPath': '/tmp/my_movie.mp4',
+                'SourceVideoUID': 'abcde'
+            },
+            FieldType.DRESL
+        )
+        md = self.img_explorer.read_fields(
+            [self.mp4_filename, self.qt_filename],
+            ['SourceVideoPath', 'SourceVideoUID'],
+            fld_type=FieldType.DRESL
+            )
+        mp4_md = md[0]
+        qt_md = md[1]
+        self.assertEqual(mp4_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
+        self.assertEqual(mp4_md['XMP:SourceVideoUID'], 'abcde')
+        self.assertEqual(qt_md['XMP:SourceVideoPath'], '/tmp/my_movie.mp4')
+        self.assertEqual(qt_md['XMP:SourceVideoUID'], 'abcde')
 
 
     # ------------ Utilities --------------

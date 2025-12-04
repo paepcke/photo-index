@@ -207,3 +207,6 @@ marimo/_lsp/
 __marimo__/
 .DS_Store
 ._.DS_Store
+*qt_movie.mov
+*mp4_movie.mov
+*mp4_movie.mp4
