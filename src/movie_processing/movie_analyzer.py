@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 12:55:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-04 10:44:20
+# @Last Modified time: 2025-12-05 11:17:42
 
 """
 MovieAnalyzer - Analyze content values in video files, generating
@@ -73,12 +73,28 @@ class MovieAnalyzer:
         self.smooth_scene_change_vals: pd.DataFrame = None
         self.scenes: pd.DataFrame = None
         
-    def analyze(self) -> List[np.ndarray]:
+    def analyze(self) -> pd.DataFrame:
         """
         Run scene detection analysis on the video.
-        Return a list of video frames that display important
-        scenes. Caller can use VideoUtils.show_frame(frame)
-        or VideoUtils.frame_to_jpeg(frame, fname, metadata)
+        Return a dataframe in which each row represents one 
+        'important' scene. The goal is to find video frames
+        that stand out from its environment, and are dissimilar
+        from each other.
+
+        Most importantly, rows include columns: frame_number and
+        scene_frame. The scene_frame is raw image data of one scene
+        Caller can use VideoUtils.show_frame(frame)
+        or VideoUtils.frame_to_jpeg(frame, file_name, metadata)
+        to save or display the raw frames.
+
+        Details of the returned df:
+               frame_number  prominence  smoothed_content_val  content_vals      scene_frame
+            0            27    4.783040              9.630631      9.620940    <img np.ndarray>
+            1           294    7.560820              9.915100     10.103290    <img np.ndarray>
+            4          1180    3.769875             14.477572     14.661802    <img np.ndarray>
+            5          1278    5.455810             10.201112     10.268808    <img np.ndarray>
+
+        :returns dataframe with all needed scene information
         """
         self.log.info(f"Analyzing video: {self.video_path}")
         
@@ -110,40 +126,27 @@ class MovieAnalyzer:
         #  idx    content_val  frame_number  timecode   prominence  smoothed_val
         #  159     12.602648       160       5.333333    7.562601     12.153559
         #                          ...
-        self.scenes = scene_detector.detect_scenes(scene_detector.time_series)
-        # Since the scene_detector had to pull the frames, 
-        # grab them, to have them available for clients of
-        # this class
-        self.scene_frames = scene_detector.scene_frame_data
+        scenes = scene_detector.detect_scenes(scene_detector.time_series)
 
         # Are we to limit the number of scenes?
-        if self.scenecount_max is not None and len(self.scenes) > self.scenecount_max:
+        if self.scenecount_max is not None and len(scenes) > self.scenecount_max:
             # Reduce the number of scenes by prioritizing high-prominence 
             # peaks in the frame-by-frame differences:
 
             # Keep the original accessible
-            self.all_scenes = self.scenes.copy()
+            self.all_scenes = scenes.copy()
 
             # Select the top N rows based on prominence
             # nlargest is generally faster/cleaner than sort_values().head() for this
-            subset = self.scenes.nlargest(self.scenecount_max, 'prominence')
+            subset = scenes.nlargest(self.scenecount_max, 'prominence')
 
             # Sort back by index (or frame_number) to restore temporal order
-            self.scenes = subset.sort_index()
+            scenes = subset.sort_index()
 
             # Reset index to have a 0,1,2,... index
-            self.scenes = self.scenes.reset_index(drop=True)           
+            scenes = self.scenes.reset_index(drop=True)           
 
-
-        if self.visuals:
-            # Just for plotting: get the smoothed content_vals:
-            self.smooth_scene_change_vals = self.raw_scene_change_vals.copy()
-            self.smooth_scene_change_vals['content_val'] = scene_detector.get_smoothed_values()
-
-        self.log.info(f"Analysis complete. Detected {len(self.scenes)} scenes.")
-        self.log.info(f"Analyzed {len(self.smooth_scene_change_vals)} frames.")
-
-        return self.scene_frames
+        return scenes
         
     def _extract_content_values(self, stats_manager) -> pd.DataFrame:
         '''

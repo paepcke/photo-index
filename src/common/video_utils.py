@@ -2,13 +2,15 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-01 14:43:53
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-01 18:15:35
+# @Last Modified time: 2025-12-06 11:30:33
 
 import os
+from pathlib import Path
 from typing import Any, Optional
 import numpy as np
 import cv2
 from PIL import Image
+from pillow_heif import register_heif_opener
 
 # ------------------- Context Manager VideoStream -----------------
 
@@ -47,6 +49,8 @@ class VideoStream:
 # ------------------- Class VideoUtils -----------------
 
 class VideoUtils:
+
+    initialized_heic_reading = False
 
     @staticmethod
     def frame_to_jpeg(frame: np.ndarray, 
@@ -205,3 +209,21 @@ class VideoUtils:
         :param frame_num: number of the frame to show
         :type frame_num: int
         '''
+        frame = VideoUtils.get_frame(path, frame_num)
+        VideoUtils.show_frame(frame)
+
+    @staticmethod
+    def read_img(fname: str) -> np.ndarray:
+        '''
+        Reads an image from file, and returns the 
+        image data. Handles usual formats, including
+        .heic.
+
+        :param fname: full path to image
+        :return: raw image data
+        '''
+        if Path(fname).suffix.lower() == '.heic' \
+            and not VideoUtils.initialized_heic_reading:
+            register_heif_opener()
+        img = np.asarray(Image.open(fname))
+        return img

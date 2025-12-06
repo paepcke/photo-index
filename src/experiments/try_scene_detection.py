@@ -2,11 +2,12 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-04 09:51:40
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-04 11:31:19
+# @Last Modified time: 2025-12-06 15:04:52
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List
+from common.video_utils import VideoUtils
 from movie_processing.scene_change_detector import SceneChangeDetector
 from movie_processing.movie_analyzer import MovieAnalyzer
 
@@ -15,22 +16,38 @@ import ffmpeg
 class SceneDetectionTester:
     short_movie  = Path('~/tmp/movies/drummer_IMG_7944.MOV').expanduser()
     medium_movie = Path('~/tmp/movies/fiddler_IMG_5209.MOV').expanduser()
-    long_movie   = Path('~/tmp/movies/49.MOV').expanduser()
+    long_movie   = Path('~/tmp/movies/wedding_IMG_7149.MOV').expanduser()
 
     def __init__(self):
 
         movie_dir = None
         try:
+            #movie = self.medium_movie
+            movie = self.long_movie
             #******
             #movie_dir = TemporaryDirectory(dir='/tmp', prefix='scene_detect_trials_')
             #mp4_movie_file = self.create_tst_movie(movie_dir.name)[0]
-            analyzer = MovieAnalyzer(self.short_movie, scenecount_max=None)
+            #analyzer = MovieAnalyzer(movie, scenecount_max=None)
+            analyzer = MovieAnalyzer(movie, scenecount_max=None)
             #analyzer = MovieAnalyzer(mp4_movie_file, scenecount_max=None)
             #******
-            change_vals = analyzer.analyze()
-            detector = SceneChangeDetector(change_vals, self.short_movie)
-            scenes_df = detector.detect_scenes(change_vals)
-            print(scenes_df)
+            scenes_df = analyzer.analyze()
+            # Save the frame images:
+            fname_root = None
+            if movie == self.short_movie:
+                fname_root = 'drummers_'
+            elif movie == self.medium_movie:
+                fname_root = 'fiddler_'
+            elif movie == self.long_movie:
+                fname_root = 'wedding_'
+            for i, img in enumerate(scenes_df['scene_frame']):
+                if fname_root is not None:
+                    fname = str(Path(f'~/tmp/{fname_root}_{i}.jpg').expanduser())
+                    VideoUtils.frame_to_jpeg(img, fname)
+                    print(f"One frame candidate to {fname}")
+                VideoUtils.show_frame(img)
+            while input("Type 'q' to quit...") != 'q':
+                continue
         finally:
             if movie_dir is not None:
                 movie_dir.cleanup()

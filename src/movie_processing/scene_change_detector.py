@@ -2,14 +2,15 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-04 15:38:26
+# @Last Modified time: 2025-12-05 17:50:43
 
-from typing import Optional
+from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter
 import cv2
+from skimage.metrics import structural_similarity as ssim
 
 from logging_service import LoggingService
 
@@ -29,7 +30,7 @@ class SceneChangeDetector:
 
     # Similarity of frame fingerprints above which two
     # frames are considered duplicates:
-    SIMILARITY_THRESHOLD = 0.9
+    SIMILARITY_THRESHOLD = 0.35
 
     def __init__(
             self,
@@ -106,14 +107,21 @@ class SceneChangeDetector:
     def detect_scenes(self, time_series: pd.Series) -> pd.DataFrame:
         """
         Processes the time series to detect scene changes.
+        Returns dataframe like:
+              
+               frame_number  prominence  smoothed_content_val  content_vals      scene_frame
+            0            27    4.783040              9.630631      9.620940    <img np.ndarray>
+            1           294    7.560820              9.915100     10.103290    <img np.ndarray>
+            4          1180    3.769875             14.477572     14.661802    <img np.ndarray>
+            5          1278    5.455810             10.201112     10.268808    <img np.ndarray>
 
         Args:
-            time_series (pd.Series): DataFrame with time and value columns.
-            val_column (str): The name of the column containing the current values.
+            time_series (pd.Series): the movie's frame-by-frame change amount scores
 
         Returns:
             pd.DataFrame: A DataFrame containing the detected scene 
-                change times and values.
+                change frames with associated change amount scores,
+                and the scene image for each scene.
         """
         if not isinstance(self.time_series, pd.Series):
             raise TypeError("Input must be a pandas Series.")
@@ -149,49 +157,42 @@ class SceneChangeDetector:
             'smoothed_content_val': self.smoothed_data[indices],
             'content_vals': scene_data.values
         })
-
+        # The frame_number entries will have turned into floats.
+        # Make them ints again:
+        scenes['frame_number'] = scenes['frame_number'].astype('int64')
+        # Remove near-duplicate scenes, and add a column
+        # 'scene_frame' with each scene's image data:
         uniq_scenes = self.deduplicate(scenes, self.vid_path)
         return uniq_scenes
 
-    def deduplicate(self, scenes: pd.DataFrame, video_path: str) -> pd.DataFrame:
+    def deduplicate(self, scenes: pd.DataFrame, video_path: str
+                    ) -> Tuple[pd.DataFrame, pd.Series]:
         '''
-        Removes duplicates from the given scenes df, and returns two items:
-           1. A dataframe excerpted from the input scenes, in which near-duplicate 
-              scenes are removed. Like:
-                   frame_number  prominence  smoothed_content_val  content_vals
-                0            27    4.783040              9.630631      9.620940
-                1           294    7.560820              9.915100     10.103290
-                4          1180    3.769875             14.477572     14.661802
-                5          1278    5.455810             10.201112     10.268808
-
-           2. A pd.Series: where each value is the np.ndarray of one
-              scene video frame; ready to be displayed or saved to file.
-              The Series' index holds the frame numbers within the
-              movie.
-           
-
-        ADDITIONALLY: provides in <scene-change-detector>.scene_frame_data 
-        a pd.Series in scene_frame_data, in which 
-        each value is the raw video frame of one scene. The index provides
-        the frame numbers from which the images came. The name of the
-        Series will be 'frame_images'.
-
-        Callers can obtain save such a row as a movie file, or display it as
-        a still image.
+        Removes near-duplicates from the given scenes df. Returns a df
+        with near-duplicate scene rows removed. A new column 
+        called 'scene_frames' is added. Its values are np.ndarrays that
+        are the scene images as lifted from the movie. They can
+        be saved to a .jpg, or directly displayed on screen.
 
         :param scenes: the detected scenes
         :param video_path: path to the movie file
         :raises IOError: if movie can't be loaded
-        :return: a new df with duplicate scenes eliminated.
+        :return: a new df with duplicate scenes eliminated, 
+            and scene images column added
         '''
         
-        final_indices = []
-        kept_histograms = []
-        scene_frame_data = []
+        kept_indices = []
+        kept_frames = []
+        all_scene_frame_numbers = []
+        all_scene_frame_data = []
+        # Range of pixel values; normally 0-255, when read
+        # straight from a video. But could be 0-1.0, for instance
+        # if normalized. We compute the proper range once, when
+        # we have the first frame:
+        data_range = None
         
-        # Open video to grab frames at specific indices
+        # Open video and grab frames at scene boundaries:
         with VideoStream(video_path) as cap:
-
             # Iterate through the peaks found by scipy
             ret: bool
             frame: np.ndarray
@@ -206,35 +207,52 @@ class SceneChangeDetector:
                     # could not be retrieved:
                     raise IOError((f"Frame {idx} in movie {video_path} identified as " 
                                    f"keyframe, but not readable from file"))
+                # Do we have a pixel data range yet?
+                if data_range is None:
+                    data_range = self._pixel_data_range(frame)
+                # Save the frame number and raw frame data
+                all_scene_frame_numbers.append(scene_row['frame_number'])
+                all_scene_frame_data.append(frame)
 
-                # Calculate fingerprint
-                current_hist = VideoUtils.get_frame_fingerprint(frame)
-                
-                # Check against ALREADY accepted scenes
-                # Note: We check against *kept_histograms*, not just the previous one.
-                if not self._is_duplicate(current_hist, 
-                                          kept_histograms, 
-                                          threshold=SceneChangeDetector.SIMILARITY_THRESHOLD):
-                    final_indices.append(idx)
-                    kept_histograms.append(current_hist)
-                    # Remember the retrieved frames so client
-                    # does not need to do it again when they
-                    # save them as images
-                    scene_frame_data.append(frame)
-                else:
-                    # Optional: Log that a scene was dropped
-                    self.log.info(f"Scene {idx} in {self.vid_path} removed as duplicate")
+        # Remove near-duplicates:
+        # Always keep the first candidate (frame_number/frame_data tuple):
+        kept_frames.append(all_scene_frame_data[0])
+        kept_indices.append(all_scene_frame_numbers[0])
 
-        dedupped_scenes = scenes.loc[final_indices]
-        # Turn the saved raw frames into a pd.Series w
+        # Compare each successive frame with each
+        # of the previously accepted ones:
+        if len(all_scene_frame_data) > 1:
+            for frame_number, frame in zip(all_scene_frame_numbers[1:], all_scene_frame_data[1:]):
+                # Here is where we apply image similarity analysis:
+                #************
+                print(f"Frame {int(frame_number)} against {[int(frm) for frm in kept_indices]}")
+                #************
+                if self._is_duplicate(frame, 
+                                      kept_frames, 
+                                      self.SIMILARITY_THRESHOLD,
+                                      data_range=data_range
+                                      ):
+                    # Drop the duplicate
+                    continue
+                kept_frames.append(frame)
+                kept_indices.append(frame_number)
+
+        # Pick out the scene rows of scenes
+        # that were accepted:
+        dedupped_scenes = scenes[scenes['frame_number'].isin(kept_indices)]
+        # Turn the saved raw frames into a pd.Series
         # where each value is a raw frame, and its index
         # value is the frame number
-        self.scene_frame_data = pd.Series(
-            data=scene_frame_data, 
+        all_scene_frame_data = pd.Series(
+            data=kept_frames, 
             index=dedupped_scenes['frame_number'],
-            name='frame_images'
+            name='frame_image'
             )
-
+        # Add the scene frames as a column called 'screne-frame'
+        # to the scene information. Use map() because the scene_frame_data's
+        # index matches the dedupped_scenes's *frame_number* column, NOT 
+        # dedupped_scenes' index:
+        dedupped_scenes['scene_frame'] = dedupped_scenes['frame_number'].map(all_scene_frame_data)
         return dedupped_scenes
 
     def get_smoothed_values(self):
@@ -247,7 +265,48 @@ class SceneChangeDetector:
         smoothed = gaussian_filter(data, sigma=self.sigma, order=0, mode='reflect')
         return smoothed
 
-    def _is_duplicate(self, 
+    def _is_duplicate(self,
+                      new_frame: np.ndarray,
+                      kept_frames: List[np.ndarray],
+                      threshold: float = None,
+                      data_range: int | float = 255
+                      ):
+        # structured_similarity needs information about
+        # image dimentions and channels. Frames are from the
+        # same video, so their formates are identical:
+        img_type = 'color'
+        try:
+            height, width, num_channels = new_frame.shape
+        except ValueError:
+            height, width = frame.shape
+            img_type = 'bw'
+        # The minimum of the images sides:
+        min_dim = min(height, width)
+        # Get size of window that similarity will slide 
+        # over the frames:
+        if min_dim < 7:
+            # Win size must be odd. So:
+            #   o If min_dim is 5 or 6, win_size will be 5
+            #   o If min_dim is 3 or 4, win_size will be 3
+            #   o If min_dim is 1 or 2, win_size will be 1 
+            valid_win_size = min_dim if min_dim % 2 != 0 else min_dim - 1
+        else:
+            # Use the default or another suitable odd value (e.g., 7)
+            valid_win_size = 7
+
+        for frame in kept_frames:
+            similarity = ssim(
+                new_frame,
+                frame,
+                win_size=valid_win_size,
+                channel_axis=(2 if img_type == 'color' else None),
+                data_range=data_range
+            )
+            if similarity > threshold:
+                return True
+        return False
+
+    def _is_duplicate_hist_method(self, 
                       new_hist, 
                       kept_histograms, 
                       threshold=None):
@@ -264,3 +323,31 @@ class SceneChangeDetector:
             if similarity > threshold:
                 return True
         return False
+
+    def _pixel_data_range(self, frame: np.ndarray) -> int | float:
+        '''
+        Determine the difference between the minimum and maximum
+        possible pixel values in the frame. Usually frames data
+        is uint8, so the range is 255. But normalization manipulations
+        can change that. 
+
+        :param frame: video frame whose data range is to be found
+        :raises ValueError: if non-standard frame format
+        :return: a single number: the range of possible pixel values
+        '''
+        if frame.dtype == np.uint8:
+            # Most common case for images read directly by OpenCV
+            return 255
+
+        elif frame.dtype == np.float32 or frame.dtype == np.float64:
+            # This means we likely converted the frame after reading it.
+            # Check the actual maximum value to infer the intended range
+            if frame.max() <= 1.0:
+                # Normalized float data (0.0 to 1.0)
+                return 1.0
+            else:
+                # Unnormalized float data (0.0 to 255.0)
+                return 255.0
+        else:
+            # Handle other unexpected dtypes, though unlikely for standard video frames
+            raise ValueError(f"Unexpected frame dtype: {frame.dtype}")        
