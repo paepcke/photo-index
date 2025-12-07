@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-01 14:43:53
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-06 11:30:33
+# @Last Modified time: 2025-12-07 15:07:46
 
 import os
 from pathlib import Path
@@ -92,17 +92,14 @@ class VideoUtils:
         return hist
 
     @staticmethod
-    def get_frame(path: str, frame_num: int) -> np.ndarray:
+    def get_frame(path: str | Path, frame_num: int) -> np.ndarray:
         '''
         Given the path to a video, extract a given
         frame and return it. The frame_num start at 0.
 
         :param path: path to video file
-        :type path: str
         :param frame_num: the index into the frame sequence
-        :type frame_num: int
         :return: the video frame
-        :rtype: np.ndarray
         :raise FileNotFoundError when file does not exist
         :raise IOError when cannot seek or read
         '''
@@ -110,6 +107,9 @@ class VideoUtils:
         # on first try in VFR video:
         SAFETY_BUF = 100
 
+        if isinstance(path, Path):
+            path = str(path)
+            
         if not os.path.exists(path):
             raise FileNotFoundError(f"File {path} not found")
         

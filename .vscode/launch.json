@@ -9,8 +9,9 @@
             "justMyCode":true,
             "console": "integratedTerminal",
             "env": {
-                "PYTHONPATH": "${env:HOME}/VSCodeWorkspaces/photo-index/src/:${env:PYTHONPATH}"
-            },
+                "PYTHONPATH": "${env:HOME}/VSCodeWorkspaces/photo-index/src/:${env:PYTHONPATH}",
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2.0"
+            }
         },
         {
             "type": "node",

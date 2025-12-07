@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-05 17:50:43
+# @Last Modified time: 2025-12-07 15:42:13
 
 from typing import List, Optional, Tuple
 import numpy as np
@@ -30,7 +30,7 @@ class SceneChangeDetector:
 
     # Similarity of frame fingerprints above which two
     # frames are considered duplicates:
-    SIMILARITY_THRESHOLD = 0.35
+    SIMILARITY_THRESHOLD = 0.55
 
     def __init__(
             self,
@@ -102,7 +102,7 @@ class SceneChangeDetector:
         # Determine the window size for the Gaussian kernel (e.g., 6*sigma + 1)
         # 3stds on left of distrib + 3stds on right of distrib ==> 6*sigma
         # The +1 makes the window odd to allow algnments around the mean:
-        self.window_size = int(6 * self.sigma + 1)
+        # self.window_size = int(6 * self.sigma + 1)
 
     def detect_scenes(self, time_series: pd.Series) -> pd.DataFrame:
         """
@@ -162,7 +162,20 @@ class SceneChangeDetector:
         scenes['frame_number'] = scenes['frame_number'].astype('int64')
         # Remove near-duplicate scenes, and add a column
         # 'scene_frame' with each scene's image data:
-        uniq_scenes = self.deduplicate(scenes, self.vid_path)
+        if len(scenes) > 1:
+            uniq_scenes = self.deduplicate(scenes, self.vid_path)
+        else:
+            uniq_scenes = scenes
+            # The self.deduplicate() method adds raw frame
+            # data as an additional column 'scene_frame'
+            # We must add that col in this branch as well:
+            frame_num = uniq_scenes.iloc[0]['frame_number']
+            uniq_scenes['scene_frame'] = [VideoUtils.get_frame(self.vid_path, frame_num)]
+        eliminated = len(scenes) - len(uniq_scenes)
+        msg = f"Found {len(scenes)} scenes"
+        if eliminated > 0:
+            msg += f". After dedup: {len(uniq_scenes)}"
+        self.log.info(msg)
         return uniq_scenes
 
     def deduplicate(self, scenes: pd.DataFrame, video_path: str
@@ -180,7 +193,7 @@ class SceneChangeDetector:
         :return: a new df with duplicate scenes eliminated, 
             and scene images column added
         '''
-        
+        self.log.info(f"Deduplicating {len(scenes)} scenes...")        
         kept_indices = []
         kept_frames = []
         all_scene_frame_numbers = []
@@ -215,7 +228,7 @@ class SceneChangeDetector:
                 all_scene_frame_data.append(frame)
 
         # Remove near-duplicates:
-        # Always keep the first candidate (frame_number/frame_data tuple):
+        # Always keep the first candidate (frame and its frame index):
         kept_frames.append(all_scene_frame_data[0])
         kept_indices.append(all_scene_frame_numbers[0])
 
@@ -225,12 +238,11 @@ class SceneChangeDetector:
             for frame_number, frame in zip(all_scene_frame_numbers[1:], all_scene_frame_data[1:]):
                 # Here is where we apply image similarity analysis:
                 #************
-                print(f"Frame {int(frame_number)} against {[int(frm) for frm in kept_indices]}")
+                #print(f"Frame {int(frame_number)} against {[int(frm) for frm in kept_indices]}")
                 #************
                 if self._is_duplicate(frame, 
                                       kept_frames, 
                                       self.SIMILARITY_THRESHOLD,
-                                      data_range=data_range
                                       ):
                     # Drop the duplicate
                     continue
@@ -239,7 +251,7 @@ class SceneChangeDetector:
 
         # Pick out the scene rows of scenes
         # that were accepted:
-        dedupped_scenes = scenes[scenes['frame_number'].isin(kept_indices)]
+        dedupped_scenes = (scenes[scenes['frame_number'].isin(kept_indices)]).copy()
         # Turn the saved raw frames into a pd.Series
         # where each value is a raw frame, and its index
         # value is the frame number
@@ -248,7 +260,7 @@ class SceneChangeDetector:
             index=dedupped_scenes['frame_number'],
             name='frame_image'
             )
-        # Add the scene frames as a column called 'screne-frame'
+        # Add the scene frames as a column called 'scene-frame'
         # to the scene information. Use map() because the scene_frame_data's
         # index matches the dedupped_scenes's *frame_number* column, NOT 
         # dedupped_scenes' index:
@@ -269,60 +281,104 @@ class SceneChangeDetector:
                       new_frame: np.ndarray,
                       kept_frames: List[np.ndarray],
                       threshold: float = None,
-                      data_range: int | float = 255
                       ):
-        # structured_similarity needs information about
-        # image dimentions and channels. Frames are from the
-        # same video, so their formates are identical:
-        img_type = 'color'
-        try:
-            height, width, num_channels = new_frame.shape
-        except ValueError:
-            height, width = frame.shape
-            img_type = 'bw'
-        # The minimum of the images sides:
-        min_dim = min(height, width)
-        # Get size of window that similarity will slide 
-        # over the frames:
-        if min_dim < 7:
-            # Win size must be odd. So:
-            #   o If min_dim is 5 or 6, win_size will be 5
-            #   o If min_dim is 3 or 4, win_size will be 3
-            #   o If min_dim is 1 or 2, win_size will be 1 
-            valid_win_size = min_dim if min_dim % 2 != 0 else min_dim - 1
-        else:
-            # Use the default or another suitable odd value (e.g., 7)
-            valid_win_size = 7
 
         for frame in kept_frames:
-            similarity = ssim(
+            similarity = self.composite_similarity(
                 new_frame,
                 frame,
-                win_size=valid_win_size,
-                channel_axis=(2 if img_type == 'color' else None),
-                data_range=data_range
             )
             if similarity > threshold:
                 return True
         return False
 
-    def _is_duplicate_hist_method(self, 
-                      new_hist, 
-                      kept_histograms, 
-                      threshold=None):
-        """
-        Compares new histogram against all kept histograms.
-        Returns True if a match is found.
-        """
-        if threshold is None:
-            threshold = SceneChangeDetector.SIMILARITY_THRESHOLD
+    def composite_similarity(self, 
+                             candidate_img: np.ndarray, 
+                             reference_img: np.ndarray,
+                             historgram_weight = 0.5,
+                             win_size: int = 7,
+                             data_range: int | float = 255,
+                             ret_all=False
+                             ) -> float | dict[str, float]:
+        '''
+        Given two images, return a similarity score between [0,1].
+        The score is a weighted combination of structural 
+        similarity, and hue, saturation histogram similarity.
+
+        Structural similarity related parameters:
+           - win_size is the size in pixels of a window
+             that structural_similarity (ssim) slides across
+             images as it examines. Number must be odd, and
+             less than the smaller of the image edges
+           - data_range is the largest number that a given
+             pixel value can take. For images that is usually
+             255, but maybe be 1.0 if the pixel values were
+             were normalized to [0,1].
+        Composition related parameters:
+           - histogram weight: a number in [0,1.0] is the
+             proportion to which the histogram similarity
+             score figures into the final score.
+
+        If ret_all is True, then instead of a single similarity
+        score, returns a dict:
+            {'similarity' : combined_similarity,
+             'ssim_score': ssim_score,
+             'histogram_score': hist_score
+             }        
+             
+        :param candidate_img: image against which similarity is measured
+        :param reference_img: the image being compared against candidate_img
+        :param historgram_weight: weight of histogram score, defaults to 0.5
+        :param win_size: window size for ssim, defaults to 7
+        :param ret_all: return a dict of partial results instead
+             of just one similarity score, defaults to False
+        :return: either a single number in [0,1], or a dict of
+            results by histogram and ssim scoring
+        '''
+        if win_size is None:
+            try:
+                # If black-white image, we get an 
+                # exception, b/c the won't be a channel
+                # dimension returned:
+                height, width, num_channels = reference_img.shape
+            except ValueError:
+                height, width = reference_img.shape
+
+            # The minimum of the images sides:
+            min_dim = min(height, width)
+            # Get size of window that similarity will slide 
+            # over the frames:
+            if min_dim < 7:
+                # Win size must be odd. So:
+                #   o If min_dim is 5 or 6, win_size will be 5
+                #   o If min_dim is 3 or 4, win_size will be 3
+                #   o If min_dim is 1 or 2, win_size will be 1 
+                win_size = min_dim if min_dim % 2 != 0 else min_dim - 1
+            else:
+                # Use the default or another suitable odd value (e.g., 7)
+                win_size = 7
+        if data_range is None:
+            data_range = self._pixel_data_range(reference_img)
             
-        for kept_hist in kept_histograms:
-            # Compare using Correlation method (1.0 is identical, 0.0 is different)
-            similarity = cv2.compareHist(kept_hist, new_hist, cv2.HISTCMP_CORREL)
-            if similarity > threshold:
-                return True
-        return False
+        ssim_score = ssim(reference_img,
+                            candidate_img, 
+                            channel_axis=2 if len(reference_img.shape) > 2 else None,
+                            win_size=win_size, 
+                            data_range=data_range)
+        fingerprint_ref = VideoUtils.get_frame_fingerprint(reference_img)
+        fingerpring_cand = VideoUtils.get_frame_fingerprint(candidate_img)
+        hist_score = cv2.compareHist(fingerprint_ref, fingerpring_cand, cv2.HISTCMP_CORREL)
+
+        # Weighted combination
+        ssim_weight = 1 - historgram_weight
+        combined_similarity = ssim_weight * ssim_score + historgram_weight * hist_score
+        if ret_all:
+            return {'similarity' : combined_similarity,
+                    'ssim_score': ssim_score,
+                    'histogram_score': hist_score
+                    }
+        else:
+            return combined_similarity
 
     def _pixel_data_range(self, frame: np.ndarray) -> int | float:
         '''

@@ -3,9 +3,10 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 10:06:48
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-30 11:40:21
+# @Last Modified time: 2025-12-07 15:57:52
 
 import argparse
+import subprocess
 import sys
 import json
 from pathlib import Path
@@ -16,29 +17,98 @@ import cv2
 
 from logging_service import LoggingService
 
+from common.utils import FileNamer
+from movie_processing.movie_analyzer import MovieAnalyzer
+
 class MovieSceneExporter:
     # --- Class Constants ---
     SUPPORTED_EXTENSIONS = {
         '.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.wmv', '.flv', '.ts'
     }
+
+    # Threshold above which a difference between successive
+    # movie frames is large enough to make the frame a 
+    # scene representative:
     DEFAULT_THRESHOLD = 27.0
     DEFAULT_IMAGE_FORMAT = 'jpeg'
     
     def __init__(self, 
                  root_dir, 
                  out_dir=None, 
-                 prefix="", 
                  max_size_mb=None, 
-                 max_time_min=None, 
+                 max_time_minutes=None, 
                  threshold=None):
         self.root_dir = Path(root_dir)
         self.out_dir = Path(out_dir) if out_dir else None
-        self.prefix = prefix
         self.max_size_mb = max_size_mb
-        self.max_time_min = max_time_min
+        self.max_time_minutes = max_time_minutes
         self.threshold = threshold if threshold is not None else self.DEFAULT_THRESHOLD
 
+        # If no outdir is given for scene images, then
+        # put them into the same directory as the root
+        # dir from which search for videos starts:
+        if out_dir is None:
+            self.out_dir = root_dir
+
         self.log = LoggingService()
+
+        # Get a file namer to manage file and directory uniqueness
+        # more easily
+        self.file_namer = FileNamer(self.out_dir)
+
+    def run_extraction(self):
+        videos = self.find_videos()
+        self.log.info(f"Found {len(videos)} videos in/under {self.root_dir}")
+        for vid in videos:
+            #***********
+            if str(vid).find('fiddler') < 0:
+                continue
+            #***********
+            self.process_video(vid)
+
+    def process_video(self, 
+                      video_path: str | Path, 
+                      scenecount_max: int = 8,
+                      visuals: bool = False
+                      ):
+
+            if self._should_skip(video_path):
+                return
+
+            # Ensure video_path is a pathlib.Path
+            video_path = Path(video_path)
+
+            # Determine output folder
+
+            dir_name = f"{video_path.stem}_scenes"
+            target_dir = self.file_namer.mkdir(dir_name, exist_ok=True, cd=True)
+
+            # For an output dir given as /tmp/movies, and 
+            # video_path /tmp/bar/my_movie.mp4, scene jpegs
+            # will be at:
+            #    /tmp/movies/my_movie_scenes/my_movie_frame_33.jpg
+            #    /tmp/movies/my_movie_scenes/my_movie_frame_126.jpg
+            #                  ...
+            scene_file_root = f"{video_path.stem}_frame_"
+            self.log.info(f"Processing: {video_path.name}")
+
+            try:
+                analyzer = MovieAnalyzer(
+                    video_path, 
+                    scenecount_max=scenecount_max,
+                    visuals=visuals
+                    )
+                scenes = analyzer.analyze()
+                # Write the scene frames out to file:
+                self.log.info(f"Writing {len(scenes)} to disk...")
+                for i, scene in scenes.iterrows():
+                    frame = scene['scene_frame']
+                    frame_number = scene['frame_number']
+                    out_path = self.file_namer.mkfile_nm(
+                        f"{scene_file_root}{frame_number}.jpg")
+                    cv2.imwrite(str(out_path), frame)
+            except Exception as e:
+                self.log.err(f"Failed to process {video_path.name}: {e}")
 
     def get_detailed_stats(self, file_path):
         """
@@ -131,96 +201,35 @@ class MovieSceneExporter:
         return [p for p in self.root_dir.rglob('*') 
                 if p.suffix.lower() in self.SUPPORTED_EXTENSIONS]
 
-    def should_skip(self, file_path):
-        # 1. Size Check
+    def _should_skip(self, file_path: str | Path) -> bool:
+        '''
+        Determines whether a given video should be skipped
+        for scene detection because the video is too long,
+        too big, (or any other criteria that could be added here)
+
+        :param file_path: full path to video
+        :return: whether or not to skip
+        '''
+        # Size Check
         if self.max_size_mb:
             size_mb = file_path.stat().st_size / (1024 * 1024)
             if size_mb > self.max_size_mb:
                 self.log.warn(f"Skipping {file_path.name}: Size {size_mb:.2f}MB > limit {self.max_size_mb}MB")
                 return True
 
-        # 2. Duration Check
-        if self.max_time_min:
+        # Duration Check
+        if self.max_time_minutes:
             duration_sec = self.get_video_duration(file_path)
             if duration_sec is None:
+                self.log.warn(f"Skipping {file_path.name}: duration could not be determined")
                 return True 
             
             duration_min = duration_sec / 60
-            if duration_min > self.max_time_min:
-                self.log.warn(f"Skipping {file_path.name}: Duration {duration_min:.2f}min > limit {self.max_time_min}min")
+            if duration_min > self.max_time_minutes:
+                self.log.warn(f"Skipping {file_path.name}: Duration {duration_min:.2f}min > limit {self.max_time_minutes}min")
                 return True
                 
         return False
-
-    def process_video(self, file_path):
-            if self.should_skip(file_path):
-                return
-
-            # Determine output folder
-            folder_name = f"{file_path.stem}_scenes"
-            target_dir = (self.out_dir / folder_name) if self.out_dir else (file_path.parent / folder_name)
-            target_dir.mkdir(parents=True, exist_ok=True)
-
-            self.log.info(f"Processing: {file_path.name}")
-
-            try:
-                # API: Open Video
-                video = open_video(str(file_path))
-                
-                # API: Setup Manager & Detector
-                scene_manager = SceneManager()
-                scene_manager.add_detector(ContentDetector(threshold=self.threshold))
-                
-                # API: Detect
-                scene_manager.detect_scenes(video, show_progress=True)
-                scene_list = scene_manager.get_scene_list()
-                
-                # --- CASE 1: Scenes Found ---
-                if scene_list:
-                    self.log.info(f"  Found {len(scene_list)} scenes. Saving images...")
-                    name_template = f"{self.prefix}$VIDEO_NAME-Scene-$SCENE_NUMBER-$IMAGE_NUMBER"
-                    
-                    save_images(
-                        scene_list=scene_list,
-                        video=video,
-                        output_dir=str(target_dir),
-                        image_name_template=name_template,
-                        image_extension=self.DEFAULT_IMAGE_FORMAT
-                    )
-
-                # --- CASE 2: No Scenes Found (Fallback) ---
-                else:
-                    self.log.info("  No scene changes detected. Extracting middle frame as fallback...")
-                    
-                    # Handle duration types (int vs FrameTimecode)
-                    if hasattr(video.duration, 'get_frames'):
-                        total_frames = video.duration.get_frames()
-                    else:
-                        total_frames = int(video.duration)
-
-                    mid_frame = total_frames // 2
-                    
-                    # Seek and Read using the open video object
-                    video.seek(mid_frame)
-                    frame_im = video.read()
-                    
-                    if frame_im is not None:
-                        out_name = f"{self.prefix}{file_path.stem}_midframe.{self.DEFAULT_IMAGE_FORMAT}"
-                        out_path = target_dir / out_name
-                        
-                        cv2.imwrite(str(out_path), frame_im)
-                        self.log.info(f"  Saved fallback image: {out_name}")
-                    else:
-                        self.log.err("  Could not read middle frame.")
-
-            except Exception as e:
-                self.log.err(f"Failed to process {file_path.name}: {e}")
-
-    def run_extraction(self):
-        videos = self.find_videos()
-        self.log.info(f"Found {len(videos)} videos in {self.root_dir}")
-        for vid in videos:
-            self.process_video(vid)
 
 
 # --- CLI Handling ---
@@ -236,8 +245,6 @@ def parse_arguments():
     parser.add_argument('-o', '--outdir', 
                         default=None, 
                         help="Central output directory for extracted images.")
-    parser.add_argument('--prefix', default="", 
-                        help="Filename prefix for images.")
     
     # Limits
     parser.add_argument('--max-size', 
@@ -282,9 +289,8 @@ def main():
     exporter = MovieSceneExporter(
         root_dir=args.root,
         out_dir=args.outdir,
-        prefix=args.prefix,
         max_size_mb=args.max_size_mb,
-        max_time_min=args.max_time_min,
+        max_time_minutes=args.max_time_min,
         threshold=args.threshold
     )
     

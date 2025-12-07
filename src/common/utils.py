@@ -2,8 +2,9 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-23 08:29:37
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-11-28 11:54:36
+# @Last Modified time: 2025-12-07 12:06:36
 
+from pathlib import Path
 import time
 from datetime import datetime, timedelta
 
@@ -138,6 +139,79 @@ def timed(label, log=None):
         seconds = end - start
         elapsed_time = timedelta(seconds=int(seconds))
         log_func(f"Finished {label}: {elapsed_time} elapsed time")
+
+# ---------------------- Class FileNamer -------------------
+
+class FileNamer:
+    '''
+    Handles the chore of creating a unique file names that
+    follow a consistent convention. Start with a base directory,
+    such as /home/john/movies. A FileName instance is always in
+    a working directory, just like a Unix/MacOS shell.
+
+    Main methods:
+         mkdir(prefix, cd=True)
+         mkfile_nm(file_name)
+         cd(new_dir)
+         pwd()
+    The mkdir() creates a directory <base_dir>/prefix. If such
+    a directory already exists, creates <base_dir>/prefix_1, etc.
+    If cd is True, cwd changes to the new directory.
+
+    The mkfile_nm() method creates appropriate deduplicated file
+    names in the cwd by adding '_<int>' to the file name before the
+    given file name's extension, if there is one. Example: given
+    my_file.jpg, the method tries <cwd>/my_file.jpg, <cwd>/my_file_1.jpg,
+    etc.
+    '''
+    def __init__(self, base_dir: str | Path):
+
+        # Standardize on internal values being Path instances,
+        # rather than strings
+        self.cwd = Path(base_dir)
+        Path.mkdir(self.cwd, exist_ok=True)
+        
+    def mkdir(self, 
+              prefix: str | Path,
+              exist_ok: bool = False,
+              cd: bool = False) -> Path:
+        '''
+        Create a directory under self.cwd with name <prefix>.
+        If that name exists, try <prefix>_1, etc.
+        If cd is True, then set self.cwd to the new directory.
+        Return a Path object that is the new directory
+
+        :param prefix: root name of new directory
+        :param cd: whether to switch directory to the new one, defaults to True
+        :return: the new directory
+        '''
+        counter = 1
+        full_path = self.cwd / Path(prefix)
+        nm = full_path
+        if exist_ok and Path.exists(nm):
+            if cd:
+                self.cd(nm)
+            return nm
+        while Path.exists(nm):
+            nm = Path(f"{str(full_path)}_{counter}")
+        Path.mkdir(nm)
+        if cd:
+            self.cd(nm)
+        return nm
+
+    def mkfile_nm(self, nm: str | Path) -> Path:
+        counter = 1
+        nmp = self.cwd / Path(nm)
+        suffix = nmp.suffix
+        nm_no_suffix = nmp.with_suffix('')
+        new_nm = nmp
+        while Path.exists(new_nm):
+            new_nm = Path(f"{str(nm_no_suffix)}_{counter}").with_suffix(suffix)
+        return new_nm
+    
+    def cd(self, new_dir: str | Path) -> Path:
+        self.cwd = Path(new_dir)
+        return self.cwd
 
 # ---------------------- Class Utils -------------------
 
