@@ -3,13 +3,14 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 10:06:48
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-07 15:57:52
+# @Last Modified time: 2025-12-07 20:30:10
 
 import argparse
 import subprocess
 import sys
 import json
 from pathlib import Path
+from typing import Optional
 from scenedetect import open_video, SceneManager
 from scenedetect.detectors import ContentDetector
 from scenedetect.scene_manager import save_images
@@ -61,14 +62,21 @@ class MovieSceneExporter:
         self.log.info(f"Found {len(videos)} videos in/under {self.root_dir}")
         for vid in videos:
             #***********
-            if str(vid).find('fiddler') < 0:
-                continue
+            #if str(vid).find('fiddler') < 0:
+            #    continue
+            #if str(vid).find('drummer') < 0:
+            #    continue
+            #if str(vid).find('movieSingle') < 0:
+            #    continue
+            #if str(vid).find('MultipleScenes') < 0:
+            #    continue
             #***********
             self.process_video(vid)
 
     def process_video(self, 
                       video_path: str | Path, 
-                      scenecount_max: int = 8,
+                      scenecount_max: Optional[int] = None,
+                      scenecount_max_per_minute: Optional[int | float] = None,
                       visuals: bool = False
                       ):
 
@@ -96,6 +104,7 @@ class MovieSceneExporter:
                 analyzer = MovieAnalyzer(
                     video_path, 
                     scenecount_max_absolute=scenecount_max,
+                    scenecount_max_per_minute=scenecount_max_per_minute,
                     visuals=visuals
                     )
                 scenes = analyzer.analyze()

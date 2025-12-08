@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 12:55:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-07 19:09:10
+# @Last Modified time: 2025-12-07 20:22:59
 
 """
 MovieAnalyzer - Analyze content values in video files, generating
@@ -47,7 +47,7 @@ class MovieAnalyzer:
     def __init__(self, 
                  video_path: str, 
                  scenecount_max_absolute: int | None = None, 
-                 scenecount_max_per_minute: int | None = None,
+                 scenecount_max_per_minute: Optional[int | float] = None,
                  visuals: bool = True):
         """
         Initialize the MovieAnalyzer. Optionally show time charts of
@@ -99,10 +99,10 @@ class MovieAnalyzer:
 
         :returns dataframe with all needed scene information
         """
-        self.log.info(f"Analyzing video: {self.video_path}")
-        
+                
         # Initialize video stream
         self.video_stream = open_video(str(self.video_path))
+        self.log.info(f"Analyzing video: {self.video_path}: {repr(self.video_stream.duration)}")
         duration_secs = int(self.video_stream.duration.get_seconds())
         duration_mins = int(np.ceil(duration_secs / 60))
         
@@ -144,6 +144,8 @@ class MovieAnalyzer:
             else:
                 scenecount_max = allowed_by_mins
         
+            # Up-round to int:
+            scenecount_max = int(np.ceil(scenecount_max))
             if len(scenes) > scenecount_max:
                 # Reduce the number of scenes by prioritizing high-prominence 
                 # peaks in the frame-by-frame differences:
@@ -158,7 +160,7 @@ class MovieAnalyzer:
                 # Preserve the first found frame (therefore the [:1])
                 reference_scene = scenes.iloc[0]
                 # Find the largest prominences in the remaining scenese:
-                subset = scenes.iloc[1:].nlargest(self.scenecount_max - 1, 'prominence')
+                subset = scenes.iloc[1:].nlargest(scenecount_max - 1, 'prominence')
                 # Include the reference scene back:
                 subset.loc[reference_scene['frame_number']] = reference_scene
 
