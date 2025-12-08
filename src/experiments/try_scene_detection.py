@@ -28,7 +28,7 @@ class SceneDetectionTester:
             #movie_dir = TemporaryDirectory(dir='/tmp', prefix='scene_detect_trials_')
             #mp4_movie_file = self.create_tst_movie(movie_dir.name)[0]
             #analyzer = MovieAnalyzer(movie, scenecount_max=None)
-            analyzer = MovieAnalyzer(movie, scenecount_max=None)
+            analyzer = MovieAnalyzer(movie, scenecount_max_absolute=None)
             #analyzer = MovieAnalyzer(mp4_movie_file, scenecount_max=None)
             #******
             scenes_df = analyzer.analyze()

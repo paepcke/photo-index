@@ -2,7 +2,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-12-01 14:43:53
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-07 15:07:46
+# @Last Modified time: 2025-12-07 17:45:28
 
 import os
 from pathlib import Path
@@ -73,7 +73,7 @@ class VideoUtils:
             raise IOError(f"Could not save frame to file {fpath}")
 
     @staticmethod 
-    def get_frame_fingerprint(frame: np.ndarray):
+    def get_frame_fingerprint(frame: np.ndarray) -> np.ndarray:
         """
         Creates a color histogram fingerprint for a given frame.
         Using HSV is better than RGB as it separates luma (brightness) from chroma.
@@ -227,3 +227,13 @@ class VideoUtils:
             register_heif_opener()
         img = np.asarray(Image.open(fname))
         return img
+    
+    @staticmethod
+    def resize_preserving_aspect(img, max_dim=640):
+        """Resize so largest dimension is max_dim, preserving aspect ratio."""
+        h, w = img.shape[:2]
+        scale = max_dim / max(h, w)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+

@@ -95,7 +95,7 @@ class MovieSceneExporter:
             try:
                 analyzer = MovieAnalyzer(
                     video_path, 
-                    scenecount_max=scenecount_max,
+                    scenecount_max_absolute=scenecount_max,
                     visuals=visuals
                     )
                 scenes = analyzer.analyze()

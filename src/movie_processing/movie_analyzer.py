@@ -3,7 +3,7 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 12:55:10
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-05 11:17:42
+# @Last Modified time: 2025-12-07 19:09:10
 
 """
 MovieAnalyzer - Analyze content values in video files, generating
@@ -19,6 +19,7 @@ This tool uses PySceneDetect to analyze video content and provides:
 import argparse
 import csv
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import List, Tuple, Optional
 import pandas as pd
@@ -45,7 +46,8 @@ class MovieAnalyzer:
     
     def __init__(self, 
                  video_path: str, 
-                 scenecount_max: int | None = None, 
+                 scenecount_max_absolute: int | None = None, 
+                 scenecount_max_per_minute: int | None = None,
                  visuals: bool = True):
         """
         Initialize the MovieAnalyzer. Optionally show time charts of
@@ -61,7 +63,8 @@ class MovieAnalyzer:
         self.video_path = Path(video_path)
         if not self.video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
-        self.scenecount_max = scenecount_max
+        self.scenecount_max = scenecount_max_absolute
+        self.scenecount_max_per_minute = scenecount_max_per_minute
         self.visuals = visuals
         
         self.log = LoggingService()
@@ -100,6 +103,8 @@ class MovieAnalyzer:
         
         # Initialize video stream
         self.video_stream = open_video(str(self.video_path))
+        duration_secs = int(self.video_stream.duration.get_seconds())
+        duration_mins = int(np.ceil(duration_secs / 60))
         
         # Create scene manager and stats manager. The scene manager
         # coordinates the movie processing:
@@ -129,22 +134,39 @@ class MovieAnalyzer:
         scenes = scene_detector.detect_scenes(scene_detector.time_series)
 
         # Are we to limit the number of scenes?
-        if self.scenecount_max is not None and len(scenes) > self.scenecount_max:
-            # Reduce the number of scenes by prioritizing high-prominence 
-            # peaks in the frame-by-frame differences:
+        if self.scenecount_max is not None or self.scenecount_max_per_minute is not None:
+            if self.scenecount_max_per_minute is not None:
+                allowed_by_mins = duration_mins * self.scenecount_max_per_minute
+            else:
+                allowed_by_mins = self.scenecount_max
+            if self.scenecount_max is not None:
+                scenecount_max = min(allowed_by_mins, self.scenecount_max)
+            else:
+                scenecount_max = allowed_by_mins
+        
+            if len(scenes) > scenecount_max:
+                # Reduce the number of scenes by prioritizing high-prominence 
+                # peaks in the frame-by-frame differences:
 
-            # Keep the original accessible
-            self.all_scenes = scenes.copy()
+                # Keep the original accessible, but without all the images
+                # They can be re-found from the 'frame_number' column:
+                #self.all_scenes_no_img_copies = scenes.copy()
+                self.all_scenes_no_img_copies = scenes.drop(columns=['scene_frame'])
 
-            # Select the top N rows based on prominence
-            # nlargest is generally faster/cleaner than sort_values().head() for this
-            subset = scenes.nlargest(self.scenecount_max, 'prominence')
+                # Select the top N rows based on prominence
+                # nlargest is generally faster/cleaner than sort_values().head().
+                # Preserve the first found frame (therefore the [:1])
+                reference_scene = scenes.iloc[0]
+                # Find the largest prominences in the remaining scenese:
+                subset = scenes.iloc[1:].nlargest(self.scenecount_max - 1, 'prominence')
+                # Include the reference scene back:
+                subset.loc[reference_scene['frame_number']] = reference_scene
 
-            # Sort back by index (or frame_number) to restore temporal order
-            scenes = subset.sort_index()
+                # Sort back by index (or frame_number) to restore temporal order
+                scenes = subset.sort_index()
 
-            # Reset index to have a 0,1,2,... index
-            scenes = self.scenes.reset_index(drop=True)           
+                # Reset index to have a 0,1,2,... index
+                scenes = scenes.reset_index(drop=True)           
 
         return scenes
         
@@ -480,7 +502,7 @@ Examples:
 
     try:
         # Create analyzer
-        analyzer = MovieAnalyzer(args.video, scenecount_max=args.scenecount, visuals=visuals)
+        analyzer = MovieAnalyzer(args.video, scenecount_max_absolute=args.scenecount, visuals=visuals)
         analyzer.analyze()
         
         # Print statistics

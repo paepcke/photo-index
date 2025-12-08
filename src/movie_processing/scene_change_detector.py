@@ -2,8 +2,9 @@
 # @Author: Andreas Paepcke
 # @Date:   2025-11-30 16:45:08
 # @Last Modified by:   Andreas Paepcke
-# @Last Modified time: 2025-12-07 15:42:13
+# @Last Modified time: 2025-12-07 17:47:25
 
+import hashlib
 from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
@@ -71,7 +72,13 @@ class SceneChangeDetector:
         self.smoothed_data = None
         self.scene_change_indices = None
 
+        self.ssim_img_max_dim = 640
+
         self.log = LoggingService()
+
+        # Cache for memoizing results of fingerprints
+        # of images:
+        self.fingerprint_cache = {}
 
         # Did we get the path to a .csv file, a dataframe with
         # one particular column being the relevant time series,
@@ -252,6 +259,9 @@ class SceneChangeDetector:
         # Pick out the scene rows of scenes
         # that were accepted:
         dedupped_scenes = (scenes[scenes['frame_number'].isin(kept_indices)]).copy()
+        # Make the index mimic the 'frame_number' column values:
+        dedupped_scenes.set_index('frame_number', inplace=True, drop=False)
+
         # Turn the saved raw frames into a pd.Series
         # where each value is a raw frame, and its index
         # value is the frame number
@@ -264,7 +274,7 @@ class SceneChangeDetector:
         # to the scene information. Use map() because the scene_frame_data's
         # index matches the dedupped_scenes's *frame_number* column, NOT 
         # dedupped_scenes' index:
-        dedupped_scenes['scene_frame'] = dedupped_scenes['frame_number'].map(all_scene_frame_data)
+        dedupped_scenes['scene_frame'] = all_scene_frame_data
         return dedupped_scenes
 
     def get_smoothed_values(self):
@@ -359,14 +369,16 @@ class SceneChangeDetector:
                 win_size = 7
         if data_range is None:
             data_range = self._pixel_data_range(reference_img)
-            
-        ssim_score = ssim(reference_img,
-                            candidate_img, 
-                            channel_axis=2 if len(reference_img.shape) > 2 else None,
-                            win_size=win_size, 
-                            data_range=data_range)
-        fingerprint_ref = VideoUtils.get_frame_fingerprint(reference_img)
-        fingerpring_cand = VideoUtils.get_frame_fingerprint(candidate_img)
+        
+        reference_img_small = VideoUtils.resize_preserving_aspect(reference_img, max_dim=self.ssim_img_max_dim)
+        candidate_img_small = VideoUtils.resize_preserving_aspect(candidate_img, max_dim=self.ssim_img_max_dim)
+        ssim_score = ssim(reference_img_small,
+                          candidate_img_small, 
+                          channel_axis=2 if len(reference_img.shape) > 2 else None,
+                          win_size=win_size, 
+                          data_range=data_range)
+        fingerprint_ref  = self._get_frame_fingerprint_cached(reference_img)
+        fingerpring_cand = self._get_frame_fingerprint_cached(candidate_img)
         hist_score = cv2.compareHist(fingerprint_ref, fingerpring_cand, cv2.HISTCMP_CORREL)
 
         # Weighted combination
@@ -379,6 +391,38 @@ class SceneChangeDetector:
                     }
         else:
             return combined_similarity
+
+    def _get_frame_fingerprint_cached(self, img: np.ndarray) -> np.ndarray:
+        '''
+        Retrieve a histogram based finger print for an image,
+        caching the result. Next time a fingerprint for the
+        same image is requested, the cached value is returned.
+
+        :param img: image to fingerprint
+        :return: fingerprint as per @see(VideoUtils.get_frame_fingerprint(img))
+        '''
+
+        img_hash = self._fast_image_hash(img)
+        
+        if img_hash not in self.fingerprint_cache:
+            self.fingerprint_cache[img_hash] = \
+                VideoUtils.get_frame_fingerprint(img)
+        
+        return self.fingerprint_cache[img_hash]
+
+    def _fast_image_hash(self, img: np.ndarray) -> int:
+        '''
+        Given an image ndarray, quickly compute a hash to
+        use as a cache key for the result of some expensive,
+        repeated computation on that image:
+
+        :param img: image to be cached
+        :return: hash key to use as key to cache
+        '''
+        # Downsample first for speed
+        small = cv2.resize(img, (240, 135), interpolation=cv2.INTER_AREA)
+        # Returns a uint64 - perfect for dict keys
+        return pd.util.hash_array(small.ravel())[0]
 
     def _pixel_data_range(self, frame: np.ndarray) -> int | float:
         '''
